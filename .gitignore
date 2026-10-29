@@ -1,0 +1,53 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# --- Environments and secrets ---
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+
+# --- Local data (never commit) ---
+# data/raw holds the Smithbox project and anything extracted from the game.
+data/raw/*
+!data/raw/.gitkeep
+*.db
+*.sqlite
+*.sqlite3
+
+# ChromaDB stores
+chroma/
+chroma_db/
+.chroma/
+chromadb/
+
+# --- Game files (never commit) ---
+*.bdt
+*.bhd
+*.dcx
+*.bnd
+*bnd.dcx
+regulation.bin
+oo2core_*.dll
+
+# --- Tool binaries (never commit) ---
+*.exe
+*.dll
+*.7z
+*.zip
+
+# --- Editors / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

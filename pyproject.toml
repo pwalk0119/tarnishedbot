@@ -1,0 +1,56 @@
+[project]
+name = "tarnishedbot"
+version = "0.1.0"
+description = "TarnishedBot: an Elden Ring (Limgrave) AI assistant. CS-460 Software Design capstone."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+    "pydantic-settings",
+    "streamlit",
+    "httpx",
+    "anthropic",
+    "sqlalchemy",
+    "pandas",
+    "chromadb",
+    "sentence-transformers",
+    "python-dotenv",
+    # Listed directly (it's already required by sentence-transformers) so the
+    # CPU-only source below applies. uv sources only affect direct dependencies.
+    "torch",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff",
+]
+
+[tool.uv]
+# This is an app, not a library: don't build/install the project itself.
+package = false
+
+# sentence-transformers pulls in torch. On Linux (CI), use the CPU-only build
+# so CI doesn't download multi-GB CUDA wheels. Windows/macOS use PyPI as usual.
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", marker = "sys_platform == 'linux'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
