@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import math
 import os
-from collections.abc import Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -174,17 +174,12 @@ def _load_tables(directory: str) -> ParamTables:
     frames = {key: pd.read_csv(d / name).set_index("ID") for key, name in CSV_FILES.items()}
     weapons = frames["weapons"]
 
-    name_index: dict[str, list[int]] = {}
-    for wid, name in weapons["Name"].items():
-        if isinstance(name, str) and name and not name.startswith("["):
-            name_index.setdefault(name.strip().lower(), []).append(int(wid))
-
     return ParamTables(
         weapons=weapons,
         reinforce=frames["reinforce"],
         curves=frames["curves"],
         element_correct=frames["element_correct"],
-        name_index=name_index,
+        name_index=build_name_index(weapons["Name"].items()),
     )
 
 
@@ -301,31 +296,53 @@ def _unique_id(ids: list[int], label: str) -> int:
     return ids[0]
 
 
+def build_name_index(pairs: Iterable[tuple[object, object]]) -> dict[str, list[int]]:
+    """(ID, Name) pairs -> lowercase name -> IDs. Skips blank names and "[NPC]"-style rows."""
+    index: dict[str, list[int]] = {}
+    for wid, name in pairs:
+        if isinstance(name, str) and name.strip() and not name.startswith("["):
+            index.setdefault(name.strip().lower(), []).append(int(wid))
+    return index
+
+
 def resolve_weapon_id(
     weapon: str | int, affinity: str | None, tables: ParamTables
+) -> tuple[int, str]:
+    """Return (weapon row ID, canonical affinity name) using the cached CSV tables."""
+    return resolve_in_index(
+        weapon, affinity, tables.name_index, lambda wid: wid in tables.weapons.index
+    )
+
+
+def resolve_in_index(
+    weapon: str | int,
+    affinity: str | None,
+    name_index: Mapping[str, list[int]],
+    exists: Callable[[int], bool],
 ) -> tuple[int, str]:
     """Return (weapon row ID, canonical affinity name).
 
     Accepts a base name plus affinity ("Longsword", "Heavy"), an affinity name
-    ("Heavy Longsword", "Bloody Longsword"), or a numeric ID.
+    ("Heavy Longsword", "Bloody Longsword"), or a numeric ID. Works on any data
+    source: pass its name index and a function that says whether an ID exists.
     """
     wanted = normalize_affinity(affinity) if affinity is not None else None
     parsed: str | None = None
 
     if isinstance(weapon, int) or str(weapon).strip().isdigit():
         wid = int(weapon)
-        if wid not in tables.weapons.index:
+        if not exists(wid):
             raise KeyError(f"No weapon with ID {wid}")
     else:
         label = str(weapon).strip()
         key = label.lower()
-        if key in tables.name_index:
-            wid = _unique_id(tables.name_index[key], label)
+        if key in name_index:
+            wid = _unique_id(name_index[key], label)
         else:
             for prefix, aff in _prefixes():
                 rest = key.removeprefix(prefix + " ")
-                if rest != key and rest in tables.name_index:
-                    base = _unique_id(tables.name_index[rest], rest)
+                if rest != key and rest in name_index:
+                    base = _unique_id(name_index[rest], rest)
                     wid, parsed = base + AFFINITY_OFFSETS[aff], aff
                     break
             else:
@@ -333,31 +350,32 @@ def resolve_weapon_id(
 
     if wanted is None:
         if parsed is not None:
-            _require_row(wid, parsed, tables)
+            _require_row(wid, parsed, exists)
             return wid, parsed
-        return wid, _infer_affinity(wid, tables)
+        return wid, infer_affinity(wid, exists)
 
     offset = wid % 10000
     base = wid - offset
-    current = _infer_affinity(wid, tables)
+    current = infer_affinity(wid, exists)
     if offset != 0 and current != wanted:
         raise ValueError(f"Weapon {wid} is already {current}; it can't also be {wanted}")
     target = base + AFFINITY_OFFSETS[wanted]
-    _require_row(target, wanted, tables)
+    _require_row(target, wanted, exists)
     return target, wanted
 
 
-def _require_row(wid: int, affinity: str, tables: ParamTables) -> None:
-    if wid not in tables.weapons.index:
+def _require_row(wid: int, affinity: str, exists: Callable[[int], bool]) -> None:
+    if not exists(wid):
         raise ValueError(f"This weapon can't take the {affinity} affinity (no row {wid})")
 
 
-def _infer_affinity(wid: int, tables: ParamTables) -> str:
+def infer_affinity(wid: int, exists: Callable[[int], bool]) -> str:
+    """Affinity implied by an ID's offset (e.g. 2000100 -> Heavy), else Standard."""
     offset = wid % 10000
     if offset == 0:
         return "Standard"
     for name, off in AFFINITY_OFFSETS.items():
-        if off == offset and (wid - offset) in tables.weapons.index:
+        if off == offset and exists(wid - offset):
             return name
     return "Standard"
 
@@ -365,7 +383,8 @@ def _infer_affinity(wid: int, tables: ParamTables) -> str:
 # -------------------------------------------------------------------- calculate
 
 
-def _floor(x: float) -> int:
+def display_floor(x: float) -> int:
+    """Floor a value the way the game displays it (with a tiny float-error guard)."""
     return math.floor(x + _FLOOR_EPSILON)
 
 
@@ -394,7 +413,9 @@ def calculate_ar(
     reinforce = tables.reinforce.loc[reinforce_id]
     # Rows are named like "Standard +10". A level past the family's max lands in
     # the next family (e.g. Standard +100 would be Heavy +0), so compare names.
-    if _family(tables.reinforce.loc[reinforce_type]["Name"]) != _family(reinforce["Name"]):
+    if reinforce_family(tables.reinforce.loc[reinforce_type]["Name"]) != reinforce_family(
+        reinforce["Name"]
+    ):
         raise ValueError(f"+{upgrade_level} is above this weapon's max upgrade level")
 
     element_id = int(weapon["attackElementCorrectId"])
@@ -439,14 +460,14 @@ def calculate_ar(
                     for s in flagged
                 )
         lines[dmg] = DamageLine(
-            base=_floor(base),
-            bonus=_floor(bonus),
-            total=_floor(base + bonus),
+            base=display_floor(base),
+            bonus=display_floor(bonus),
+            total=display_floor(base + bonus),
             base_exact=base,
             bonus_exact=bonus,
         )
 
-    total = _floor(sum(line.base_exact + line.bonus_exact for line in lines.values()))
+    total = display_floor(sum(line.base_exact + line.bonus_exact for line in lines.values()))
     return AttackRating(
         weapon_id=wid,
         weapon_name=str(weapon["Name"]),
@@ -460,7 +481,7 @@ def calculate_ar(
     )
 
 
-def _family(reinforce_name: object) -> str:
+def reinforce_family(reinforce_name: object) -> str:
     """'Standard +10' -> 'Standard'."""
     return str(reinforce_name).rsplit(" +", 1)[0]
 

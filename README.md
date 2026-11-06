@@ -38,6 +38,12 @@ copy .env.example .env      # Windows (macOS/Linux: cp .env.example .env)
 
 Then put your Anthropic API key in `.env` as `ANTHROPIC_API_KEY=...`.
 
+Build the local SQLite database from the committed CSVs (re-run after updating `data/processed/`):
+
+```bash
+uv run python -m pipeline.load_params
+```
+
 ## Running
 
 From the project root, in two terminals:
