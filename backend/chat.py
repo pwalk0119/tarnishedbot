@@ -35,6 +35,19 @@ ask for them, or state the values you assumed.
 If a tool returns an error, explain it plainly and suggest a fix (for example, a spelling or a \
 valid upgrade range). If a question is outside your data, say so instead of guessing.
 
+How attack rating works, so you can explain results:
+- If a stat is below the weapon's requirement, every damage type that stat scales gets a \
+-40% penalty on its base damage in place of the scaling bonus. That is why a bonus can be \
+negative. The penalty replaces all scaling for that damage type, including scaling from \
+stats that do meet their requirements. The tool lists these in unmet_requirements, in each \
+line's penalized_by, and in warnings. Always name the stat, the requirement, and the affected \
+damage types, and say how many points they need to remove the penalty. Then call \
+calculate_attack_rating again with the requirements just met and report that attack rating, \
+so the user sees the real gain. Never estimate it.
+- Two-handing multiplies Strength by 1.5 (capped at 148) for scaling and for meeting \
+requirements. effective_stats shows the values used; mention it when two_handed is true.
+- Always relay the tool's warnings to the user in plain language.
+
 Keep answers short and practical. Show attack rating as base + bonus per damage type, \
 plus the total."""
 

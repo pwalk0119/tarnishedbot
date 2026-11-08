@@ -144,6 +144,38 @@ def test_unmet_requirement_applies_penalty() -> None:
 
 
 @needs_data
+def test_unmet_requirement_is_reported() -> None:
+    # Blasphemous Blade needs 15 Dex. Dex scales physical only, so fire keeps its scaling.
+    stats = {"str": 33, "dex": 10, "int": 10, "fai": 65, "arc": 10}
+    result = calculate_ar("Blasphemous Blade", 5, None, stats, two_handed=True)
+    assert result.requirements["dex"] == 15
+    assert result.unmet_requirements == ["dex"]
+    assert result.physical.penalized_by == ["dex"]
+    assert result.physical.bonus < 0
+    assert result.fire.penalized_by == []
+    assert result.fire.bonus > 0
+    assert any("Dexterity 10" in w and "requirement of 15" in w for w in result.warnings)
+
+
+@needs_data
+def test_met_requirements_report_nothing() -> None:
+    result = calculate_ar("Longsword", 0, None, STATS_10)
+    assert result.unmet_requirements == []
+    assert all(not result.line(d).penalized_by for d in DAMAGE_TYPES)
+    assert not any("requirement" in w for w in result.warnings)
+
+
+@needs_data
+def test_two_handing_counts_toward_strength_requirement() -> None:
+    # 9 Str one-handed misses the Longsword's 10; two-handed it becomes 13.
+    one = calculate_ar("Longsword", 0, None, {**STATS_10, "str": 9})
+    two = calculate_ar("Longsword", 0, None, {**STATS_10, "str": 9}, two_handed=True)
+    assert one.unmet_requirements == ["str"]
+    assert two.unmet_requirements == []
+    assert two.physical.bonus > 0
+
+
+@needs_data
 def test_two_handing_raises_effective_strength() -> None:
     result = calculate_ar("Longsword", 0, None, {**STATS_10, "str": 20}, two_handed=True)
     assert result.effective_stats["str"] == 30

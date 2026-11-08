@@ -101,6 +101,13 @@ REQUIREMENT_COL = {
     "fai": "properFaith",
     "arc": "properLuck",
 }
+STAT_DISPLAY_NAME = {
+    "str": "Strength",
+    "dex": "Dexterity",
+    "int": "Intelligence",
+    "fai": "Faith",
+    "arc": "Arcane",
+}
 ELEMENT_STAT_NAME = {
     "str": "Strength",
     "dex": "Dexterity",
@@ -212,6 +219,9 @@ class DamageLine(BaseModel):
     total: int
     base_exact: float
     bonus_exact: float
+    # Stats below the weapon's requirement that scale this damage type. When
+    # non-empty, the bonus is the -40% penalty instead of stat scaling.
+    penalized_by: list[str] = []
 
 
 class AttackRating(BaseModel):
@@ -222,6 +232,9 @@ class AttackRating(BaseModel):
     two_handed: bool
     # Stats after two-handing (Str can reach 148), keyed str/dex/int/fai/arc.
     effective_stats: dict[str, int]
+    # Weapon's stat requirements, and the ones effective_stats doesn't meet.
+    requirements: dict[str, int]
+    unmet_requirements: list[str] = []
     physical: DamageLine
     magic: DamageLine
     fire: DamageLine
@@ -438,16 +451,20 @@ def calculate_ar(
         else:
             warnings.append("No two-handing Strength bonus for this weapon (isDualBlade = 1).")
 
+    requirements = {s: int(weapon[REQUIREMENT_COL[s]]) for s in STATS}
+    unmet_requirements = [s for s in STATS if effective[s] < requirements[s]]
+
     lines: dict[str, DamageLine] = {}
     for dmg in DAMAGE_TYPES:
         base = float(weapon[ATTACK_BASE_COL[dmg]]) * float(reinforce[ATK_RATE_COL[dmg]])
         bonus = 0.0
+        unmet: list[str] = []
         if base > 0:
             suffix = ELEMENT_SUFFIX[dmg]
             flagged = [
                 s for s in STATS if int(element[f"is{ELEMENT_STAT_NAME[s]}Correct_by{suffix}"]) == 1
             ]
-            unmet = [s for s in flagged if effective[s] < int(weapon[REQUIREMENT_COL[s]])]
+            unmet = [s for s in flagged if s in unmet_requirements]
             if unmet:
                 bonus = base * REQUIREMENT_PENALTY
             else:
@@ -465,7 +482,21 @@ def calculate_ar(
             total=display_floor(base + bonus),
             base_exact=base,
             bonus_exact=bonus,
+            penalized_by=unmet,
         )
+
+    for s in unmet_requirements:
+        hit = [dmg for dmg, line in lines.items() if s in line.penalized_by]
+        msg = (
+            f"{STAT_DISPLAY_NAME[s]} {effective[s]} is below this weapon's requirement of "
+            f"{requirements[s]}."
+        )
+        if hit:
+            msg += (
+                f" {STAT_DISPLAY_NAME[s]} scales {', '.join(hit)} damage, so that bonus is a "
+                f"{round(REQUIREMENT_PENALTY * 100)}% penalty on base damage instead of scaling."
+            )
+        warnings.append(msg)
 
     total = display_floor(sum(line.base_exact + line.bonus_exact for line in lines.values()))
     return AttackRating(
@@ -475,6 +506,8 @@ def calculate_ar(
         upgrade_level=upgrade_level,
         two_handed=two_handed,
         effective_stats=effective,
+        requirements=requirements,
+        unmet_requirements=unmet_requirements,
         total=total,
         warnings=warnings,
         **lines,
