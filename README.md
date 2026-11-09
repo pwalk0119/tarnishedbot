@@ -70,4 +70,17 @@ GitHub Actions runs the same commands on every push and pull request. Tests neve
 
 ## Game data
 
-Game data is extracted **offline** with Smithbox from a local copy of the game (version pinned above). Raw game files, the Smithbox project, and modding tool binaries stay on the developer's machine under `data/raw/`, which is gitignored. Only numeric tables exported as CSV are committed to `data/processed/`.
+Game data is extracted **offline** from a local copy of the game (version pinned above). Raw game files, the Smithbox project, and modding tool binaries stay on the developer's machine, never in this repo. Only param tables exported as CSV (numbers plus community row names) are committed to `data/processed/`. The game folder is only ever read: work happens on a copy of `regulation.bin`.
+
+| CSVs | Source |
+|---|---|
+| EquipParamWeapon, ReinforceParamWeapon, CalcCorrectGraph, AttackElementCorrectParam | Smithbox Param Editor CSV export |
+| BonfireWarpParam (sites of grace), ShopLineupParam, NpcParam, ItemLotParam_enemy, ItemLotParam_map, GameAreaParam, WorldMapPointParam, WorldMapPlaceNameParam | WitchyBND + `pipeline/witchy_to_csv.py` |
+
+To re-export with WitchyBND: copy `regulation.bin` out of the game folder, run `WitchyBND.exe -s regulation.bin`, then `WitchyBND.exe -s <Param>.param` for each param in the unpacked `regulation-bin` folder, and convert:
+
+```
+uv run python -m pipeline.witchy_to_csv <path>/regulation-bin BonfireWarpParam ShopLineupParam ...
+```
+
+Both routes give identical values; the four weapon tables were cross-checked value for value.

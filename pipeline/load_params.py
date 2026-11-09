@@ -28,6 +28,15 @@ TABLES = {
     "ReinforceParamWeapon.csv": "reinforce_param_weapon",
     "CalcCorrectGraph.csv": "calc_correct_graph",
     "AttackElementCorrectParam.csv": "attack_element_correct_param",
+    # Guide data, exported with pipeline.witchy_to_csv.
+    "BonfireWarpParam.csv": "bonfire_warp_param",
+    "ShopLineupParam.csv": "shop_lineup_param",
+    "NpcParam.csv": "npc_param",
+    "ItemLotParam_enemy.csv": "item_lot_param_enemy",
+    "ItemLotParam_map.csv": "item_lot_param_map",
+    "GameAreaParam.csv": "game_area_param",
+    "WorldMapPointParam.csv": "world_map_point_param",
+    "WorldMapPlaceNameParam.csv": "world_map_place_name_param",
 }
 META_TABLE = "load_meta"
 
@@ -74,7 +83,7 @@ def load_params(
         with engine.begin() as conn:
             for csv_name, table in TABLES.items():
                 path = processed_dir / csv_name
-                df = pd.read_csv(path)
+                df = pd.read_csv(path, low_memory=False)
                 if "ID" not in df.columns:
                     raise ValueError(f"{csv_name} has no ID column")
                 if df["ID"].duplicated().any():
