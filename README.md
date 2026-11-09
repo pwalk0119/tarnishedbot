@@ -75,7 +75,7 @@ Game data is extracted **offline** from a local copy of the game (version pinned
 | CSVs | Source |
 |---|---|
 | EquipParamWeapon, ReinforceParamWeapon, CalcCorrectGraph, AttackElementCorrectParam | Smithbox Param Editor CSV export |
-| BonfireWarpParam (sites of grace), ShopLineupParam, NpcParam, ItemLotParam_enemy, ItemLotParam_map, GameAreaParam, WorldMapPointParam, WorldMapPlaceNameParam | WitchyBND + `pipeline/witchy_to_csv.py` |
+| BonfireWarpParam (sites of grace), BonfireWarpSubCategoryParam, ShopLineupParam, ShopLineupParam_Recipe, NpcParam, SpEffectParam, ItemLotParam_enemy, ItemLotParam_map, GameAreaParam, WorldMapPointParam, WorldMapPlaceNameParam, EquipParamGoods, EquipParamProtector, EquipParamAccessory, EquipParamGem, Magic, SwordArtsParam, EquipMtrlSetParam | WitchyBND + `pipeline/witchy_to_csv.py` |
 
 To re-export with WitchyBND: copy `regulation.bin` out of the game folder, run `WitchyBND.exe -s regulation.bin`, then `WitchyBND.exe -s <Param>.param` for each param in the unpacked `regulation-bin` folder, and convert:
 

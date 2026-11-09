@@ -37,6 +37,16 @@ TABLES = {
     "GameAreaParam.csv": "game_area_param",
     "WorldMapPointParam.csv": "world_map_point_param",
     "WorldMapPlaceNameParam.csv": "world_map_place_name_param",
+    "BonfireWarpSubCategoryParam.csv": "bonfire_warp_sub_category_param",
+    "EquipParamGoods.csv": "equip_param_goods",
+    "EquipParamProtector.csv": "equip_param_protector",
+    "EquipParamAccessory.csv": "equip_param_accessory",
+    "EquipParamGem.csv": "equip_param_gem",
+    "Magic.csv": "magic",
+    "SwordArtsParam.csv": "sword_arts_param",
+    "SpEffectParam.csv": "sp_effect_param",
+    "ShopLineupParam_Recipe.csv": "shop_lineup_param_recipe",
+    "EquipMtrlSetParam.csv": "equip_mtrl_set_param",
 }
 META_TABLE = "load_meta"
 
