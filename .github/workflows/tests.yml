@@ -33,3 +33,6 @@ jobs:
 
       - name: Pytest
         run: uv run pytest
+
+      - name: Guide entries check
+        run: uv run python -m pipeline.guide_check

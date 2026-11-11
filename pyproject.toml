@@ -20,6 +20,7 @@ dependencies = [
     # Listed directly (it's already required by sentence-transformers) so the
     # CPU-only source below applies. uv sources only affect direct dependencies.
     "torch",
+    "pyyaml>=6",
 ]
 
 [dependency-groups]

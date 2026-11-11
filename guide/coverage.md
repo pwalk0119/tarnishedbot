@@ -11,7 +11,7 @@ Sites of grace and items are covered inside the entries they belong to, and adde
 | Entry | Status |
 |---|---|
 | Limgrave (overview) | todo |
-| Stormhill | todo |
+| Stormhill | draft |
 | Stormveil Castle | todo |
 | Stranded Graveyard | todo |
 | Weeping Peninsula | todo |
@@ -23,7 +23,7 @@ Sites of grace and items are covered inside the entries they belong to, and adde
 | Cave of Knowledge | todo |
 | Fringefolk Hero's Grave | todo |
 | Groveside Cave | todo |
-| Stormfoot Catacombs | todo |
+| Stormfoot Catacombs | draft |
 | Coastal Cave | todo |
 | Murkwater Catacombs | todo |
 | Murkwater Cave | todo |
@@ -44,8 +44,8 @@ Stormveil Castle is listed once, under Subregions.
 | Entry | Status |
 |---|---|
 | Chapel of Anticipation | todo |
-| Church of Elleh | todo |
-| Gatefront Ruins | todo |
+| Church of Elleh | draft |
+| Gatefront Ruins | draft |
 | Stormgate | todo |
 | Stormhill Shack | todo |
 | Warmaster's Shack | todo |
@@ -85,8 +85,8 @@ Stranded Graveyard is listed once, under Subregions.
 
 | Entry | Status |
 |---|---|
-| White Mask Varre | todo |
-| Kale | todo |
+| White Mask Varre | draft |
+| Kale | draft |
 | Melina | todo |
 | Boc the Seamster | todo |
 | Ranni the Witch | todo |
@@ -111,7 +111,7 @@ Stranded Graveyard is listed once, under Subregions.
 
 | Entry | Status |
 |---|---|
-| Tree Sentinel | todo |
+| Tree Sentinel | draft |
 | Erdtree Avatar | todo |
 | Night's Cavalry | todo |
 | Flying Dragon Agheel | todo |
@@ -124,7 +124,7 @@ Stranded Graveyard is listed once, under Subregions.
 |---|---|
 | Demi-Human | todo |
 | Godrick Footsoldier | todo |
-| Godrick Soldier | todo |
+| Godrick Soldier | draft |
 | Godrick Knight | todo |
 | Kaiden Sellsword | todo |
 | Mad Pumpkin Head | todo |
