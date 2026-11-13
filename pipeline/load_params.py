@@ -47,6 +47,9 @@ TABLES = {
     "SpEffectParam.csv": "sp_effect_param",
     "ShopLineupParam_Recipe.csv": "shop_lineup_param_recipe",
     "EquipMtrlSetParam.csv": "equip_mtrl_set_param",
+    "ThrowParam.csv": "throw_param",
+    "AtkParam_Pc.csv": "atk_param_pc",
+    "BehaviorParam_PC.csv": "behavior_param_pc",
 }
 META_TABLE = "load_meta"
 

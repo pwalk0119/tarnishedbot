@@ -16,7 +16,7 @@ Crafting Kit and other basics.
 
 ## Location
 
-Inside the Church of Elleh, next to the grace. He stays there all game. [check]
+Inside the Church of Elleh, next to the grace. He never moves.
 
 ## Services
 
@@ -45,12 +45,13 @@ Shop (prices in runes):
 
 ## Questline
 
-None of his own. Ask him about the howling and he points you to Mistwood, which leads you
-to Blaidd. [check]
+None of his own, but he's a step in Blaidd's. Once you've heard the howling in Mistwood,
+ask him about it. He points you back to Mistwood, where you find Blaidd, and teaches you
+the Finger Snap gesture.
 
 ## Rewards
 
-None.
+- **Finger Snap** — gesture, taught when you ask him about the howling
 
 ## Tips
 

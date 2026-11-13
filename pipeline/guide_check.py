@@ -36,7 +36,6 @@ REQUIRED_SECTIONS = {
         "Points of Interest",
         "Bosses",
         "NPCs",
-        "Items",
         "Tips",
     ],
     "dungeon": [

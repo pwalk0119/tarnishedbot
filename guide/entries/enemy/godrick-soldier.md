@@ -19,7 +19,8 @@ They're the most common human enemy in Limgrave and Stormveil.
 - Gatefront Ruins camp
 - Stormgate and Stormveil Castle
 - Patrols and camps around Limgrave and the Weeping Peninsula
-- One fights you at the end of the Stranded Graveyard tutorial. [check]
+- One fights you at the end of the Cave of Knowledge, the optional tutorial dungeon reached
+  from the Stranded Graveyard. It's the first human enemy many players fight.
 
 ## Stats
 
@@ -35,8 +36,8 @@ HP and runes depend on the area:
 ## Drops
 
 - **Smithing Stone [1]** — 4% drop chance
-- **Bolt** — 10% drop chance (×5)
-- **Lordsworn's Bolt** — 5% drop chance (×5)
+- **Bolt** (x5) — 10% drop chance
+- **Lordsworn's Bolt** (x5) — 5% drop chance
 - **Lordsworn's Straight Sword** — 2% drop chance
 - **Brass Shield** — 2% drop chance
 - **Godrick Soldier Helm** — 1.5% drop chance
@@ -46,6 +47,10 @@ HP and runes depend on the area:
 
 ## How to Fight
 
+- **Weak to backstabs.** Sneak up from behind (crouching helps) and attack for a critical
+  hit that usually kills outright. Like most human knights and soldiers, they can also be
+  parried and riposted, or critically hit after their stance breaks.
 - Pull them one at a time. Groups will surround you.
 - Most carry a shield: get behind them or guard-break with heavy attacks.
-- Crossbow soldiers hang back. Close the distance or use cover.
+- Crossbow soldiers hang back. Raise a shield to block their bolts while you close the
+  distance: a shield stops most small physical projectiles, not only bolts.

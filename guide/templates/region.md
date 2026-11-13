@@ -34,11 +34,7 @@ source: original
 
 <!-- NPCs met in this area and what they offer. -->
 
-## Items
-
-<!-- Notable pickups. Bold item name first. -->
-- **Item Name** — where to find it
-
 ## Tips
 
-<!-- Short practical advice: routes, dangers, what to grab first. -->
+<!-- Short practical advice: routes, dangers. Item pickups go in the landmark and dungeon
+     entries, not here. -->

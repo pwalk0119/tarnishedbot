@@ -35,9 +35,10 @@ He's the first enemy most players see.
 
 ## Rewards
 
-- **Golden Halberd** — drop
+- **Golden Halberd** — drop (needs 30 Str, 14 Dex, 12 Fai)
 
 ## Tips
 
 - Skip him at first. Come back after a few levels and a weapon upgrade.
-- The Golden Halberd needs high Strength and Faith. [check]
+- The Golden Halberd needs 30 Strength, 14 Dexterity and 12 Faith, so most early builds
+  can't wield it well right away.

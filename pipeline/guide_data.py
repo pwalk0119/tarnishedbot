@@ -102,6 +102,12 @@ class Grace:
     group: str
 
 
+# Paramdex labels that differ from the in-game grace name, confirmed in game.
+GRACE_NAME_FIXES = {
+    "Gatefront Ruins": "Gatefront",  # by Stormgate, west of the ruins
+}
+
+
 def graces(group: str | None = None) -> list[Grace]:
     """Sites of grace, optionally only those in a grace group such as 'Stormhill'."""
     warps = table("BonfireWarpParam")
@@ -109,6 +115,7 @@ def graces(group: str | None = None) -> list[Grace]:
     out = []
     for _, row in warps.iterrows():
         label_group, name = split_label(row["Name"])
+        name = GRACE_NAME_FIXES.get(name, name)
         if not name:
             continue
         group_name = split_label(groups.get(int(row["bonfireSubCategoryId"]), ""))[1]
@@ -174,6 +181,11 @@ class Drop:
     chance: float  # percent
     quantity: int
 
+    def bullet(self) -> str:
+        """'- **Bolt** (x5) — 10% drop chance': quantity goes with the item name."""
+        qty = f" (x{self.quantity})" if self.quantity > 1 else ""
+        return f"- **{self.name}**{qty} — {self.chance:g}% drop chance"
+
 
 @dataclass
 class EnemyVariant:
@@ -183,6 +195,7 @@ class EnemyVariant:
     hp: int
     area_scaling: str | None
     runes: int
+    stance: int
     drops: list[Drop] = field(default_factory=list)
 
 
@@ -245,6 +258,7 @@ def enemy(name: str, *, include_unscaled: bool = False) -> list[EnemyVariant]:
                 hp=math.floor(int(row["hp"]) * rate + 1e-9),
                 area_scaling=scaling,
                 runes=int(row["getSoul"]),
+                stance=int(row["superArmorDurability"]),
                 drops=drops(lot) if lot > 0 else [],
             )
         )
@@ -260,3 +274,34 @@ def boss_runes(name: str) -> list[tuple[str, int]]:
         if needle in _norm(label):
             out.append((label, int(row["bonusSoul_single"])))
     return out
+
+
+# ----------------------------------------------------------------- criticals
+
+# ThrowParam rows for the player (AtkChrId 0) attacking a character model (DefChrId) are
+# numbered GG + model (4 digits) + 2 digits. The group GG says which kind of critical hit
+# it is. This mapping is inferred, not documented: group 10 is the only one that uses the
+# "_start" backstab range fields, and it is missing for enemies that can't be backstabbed
+# (Margit 2130, Erdtree Burial Watchdog 4260, Mad Pumpkin Head 4340) while present for
+# ones that can (Godrick Soldier 4311, Imp 3080). Bosses like Mohg (4800) only have 14.
+CRITICAL_GROUPS = {
+    10: "backstab",
+    13: "riposte after a parry",
+    14: "critical after a stance break",
+}
+
+
+def model_id(npc_id: int) -> int:
+    """NpcParam IDs start with the character model: 43110010 -> c4311."""
+    return npc_id // 10000
+
+
+def criticals(npc_id: int) -> list[str]:
+    """Critical hits the player can land on this NPC, from ThrowParam (see above).
+
+    An empty list means ThrowParam has no player throws against this model at all.
+    """
+    throws = table("ThrowParam")
+    rows = throws[(throws["AtkChrId"] == 0) & (throws["DefChrId"] == model_id(npc_id))]
+    groups = {int(i) // 1_000_000 for i in rows["ID"]}
+    return [label for g, label in CRITICAL_GROUPS.items() if g in groups]

@@ -24,6 +24,9 @@ def test_graces_by_group() -> None:
     names = {g.name for g in gd.graces("Stormhill")}
     assert {"Stormhill Shack", "Castleward Tunnel"} <= names
     assert "Church of Elleh" in {g.name for g in gd.graces("Limgrave")}
+    # Paramdex calls it "Gatefront Ruins"; in game it's "Gatefront".
+    assert "Gatefront" in {g.name for g in gd.graces("Limgrave")}
+    assert "Gatefront Ruins" not in {g.name for g in gd.graces()}
 
 
 @needs_data
@@ -45,6 +48,21 @@ def test_enemy_drops_and_boss_runes() -> None:
     soldier = next(v for v in gd.enemy("Godrick Soldier") if v.runes == 64)
     assert "Lordsworn's Straight Sword" in {d.name for d in soldier.drops}
     assert ("[Stormveil Castle] Margit the Fell Omen", 12000) in gd.boss_runes("Margit")
+
+
+def test_drop_bullet_puts_quantity_after_name() -> None:
+    assert gd.Drop("Bolt", 10.0, 5).bullet() == "- **Bolt** (x5) — 10% drop chance"
+    assert gd.Drop("Brass Shield", 2.0, 1).bullet() == "- **Brass Shield** — 2% drop chance"
+
+
+@needs_data
+def test_criticals_from_throw_param() -> None:
+    # Soldiers can be backstabbed; Margit and the Burial Watchdog can't (stance break only).
+    assert "backstab" in gd.criticals(43110010)  # Godrick Soldier, Limgrave
+    margit = gd.criticals(21300014)
+    assert "backstab" not in margit
+    assert "critical after a stance break" in margit
+    assert "backstab" not in gd.criticals(42600100)  # Erdtree Burial Watchdog
 
 
 @needs_data

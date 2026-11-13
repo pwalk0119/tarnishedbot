@@ -61,7 +61,13 @@ def cmd_enemy(args: argparse.Namespace) -> None:
     # Merge placements with identical stats and drops.
     merged: dict[tuple, list[gd.EnemyVariant]] = {}
     for v in variants:
-        key = (v.name, v.hp, v.runes, tuple((d.name, d.chance, d.quantity) for d in v.drops))
+        key = (
+            v.name,
+            v.hp,
+            v.runes,
+            v.stance,
+            tuple((d.name, d.chance, d.quantity) for d in v.drops),
+        )
         merged.setdefault(key, []).append(v)
     for group in merged.values():
         v = group[0]
@@ -70,9 +76,11 @@ def cmd_enemy(args: argparse.Namespace) -> None:
         print(f"### {v.name} — NpcParam {ids}")
         print(f"- **HP:** {v.hp:,}{scale}; base {v.base_hp:,}")
         print(f"- **Runes:** {v.runes:,}" + (" (bosses: see `boss`)" if v.runes == 0 else ""))
+        print(f"- **Stance:** {v.stance}")
+        crits = gd.criticals(v.id)
+        print(f"- **Criticals:** {', '.join(crits) if crits else 'none found'} [check]")
         for d in v.drops:
-            qty = f" ×{d.quantity}" if d.quantity > 1 else ""
-            print(f"- **{d.name}**{qty} — {d.chance:g}% drop chance")
+            print(d.bullet())
         print()
 
 

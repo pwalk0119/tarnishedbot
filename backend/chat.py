@@ -16,6 +16,7 @@ import anthropic
 from pydantic import BaseModel, Field, ValidationError
 
 from tools.attack_rating import AFFINITY_OFFSETS, MAX_UPGRADE_LEVEL, calculate_ar
+from tools.stance import weapon_stance
 from tools.weapon_lookup import lookup_weapon
 
 MAX_TOOL_ROUNDS = 8
@@ -28,9 +29,10 @@ SYSTEM_PROMPT = """You are TarnishedBot, an assistant for Elden Ring focused on 
 Game data is pinned to Elden Ring app 1.17.2, regulation 1.17.3, base game only (no DLC).
 
 Use your tools for every number: call calculate_attack_rating for attack rating or damage, \
-and lookup_weapon for base damage, scaling, requirements, weight, or affinities. Never estimate \
-these values yourself. If the user hasn't given the stats or upgrade level a calculation needs, \
-ask for them, or state the values you assumed.
+lookup_weapon for base damage, scaling, requirements, weight, or affinities, and \
+calculate_stance_damage for stance (poise) damage and how many hits break an enemy's stance. \
+Never estimate these values yourself. If the user hasn't given the stats or upgrade level \
+a calculation needs, ask for them, or state the values you assumed.
 
 If a tool returns an error, explain it plainly and suggest a fix (for example, a spelling or a \
 valid upgrade range). If a question is outside your data, say so instead of guessing.
@@ -47,6 +49,16 @@ so the user sees the real gain. Never estimate it.
 - Two-handing multiplies Strength by 1.5 (capped at 148) for scaling and for meeting \
 requirements. effective_stats shows the values used; mention it when two_handed is true.
 - Always relay the tool's warnings to the user in plain language.
+
+How stance works: each hit deals stance damage, and when an enemy's stance bar runs out its \
+stance breaks, leaving it open to a critical hit. calculate_stance_damage lists stance damage \
+per attack and, given an enemy, the hits needed per attack (one entry per enemy variant). \
+Answer with the few attacks that break stance fastest, such as guard counters or charged R2s, \
+not the whole table. If an enemy has several variants, give each stance value. Mention that \
+counter hits and buffs add more when it matters.
+
+When listing item drops or stacks, put the quantity right after the item name, then the \
+chance: "Bolt (x5) — 10% drop chance", never "Bolt — 10% drop chance (x5)".
 
 Keep answers short and practical. Show attack rating as base + bonus per damage type, \
 plus the total."""
@@ -125,6 +137,28 @@ TOOLS: list[dict[str, Any]] = [
             "additionalProperties": False,
         },
     },
+    {
+        "name": "calculate_stance_damage",
+        "description": "Stance (poise) damage of a weapon's attacks in Elden Ring regulation "
+        "1.17.3: one- and two-handed R1 chain, R2s, charged R2s, running, rolling, jumping "
+        "attacks and guard counters. Given an enemy, also returns its stance bar (per variant "
+        "placed in Limgrave, Weeping Peninsula, Stormveil or the Stranded Graveyard) and how "
+        "many hits of each attack break it. Upgrade level and stats don't affect stance damage.",
+        "strict": True,
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "weapon": _WEAPON_PROP,
+                "affinity": _AFFINITY_PROP,
+                "enemy": {
+                    "type": "string",
+                    "description": "Enemy name such as 'Imp' or 'Godrick Soldier', or '' for none.",
+                },
+            },
+            "required": ["weapon", "affinity", "enemy"],
+            "additionalProperties": False,
+        },
+    },
 ]
 
 
@@ -184,9 +218,16 @@ def _run_lookup(args: dict[str, Any], database_url: str | None) -> str:
     return info.model_dump_json()
 
 
+def _run_stance(args: dict[str, Any], database_url: str | None) -> str:
+    enemy = str(args.get("enemy") or "").strip() or None
+    result = weapon_stance(args["weapon"], _affinity_arg(args.get("affinity")), enemy)
+    return result.model_dump_json(exclude_none=True)
+
+
 TOOL_HANDLERS: dict[str, Callable[[dict[str, Any], str | None], str]] = {
     "calculate_attack_rating": _run_attack_rating,
     "lookup_weapon": _run_lookup,
+    "calculate_stance_damage": _run_stance,
 }
 
 

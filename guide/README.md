@@ -51,7 +51,7 @@ when a section doesn't apply.
 
 | Type | Required sections |
 |---|---|
-| region | Overview, Getting There, Sites of Grace, Points of Interest, Bosses, NPCs, Items, Tips |
+| region | Overview, Getting There, Sites of Grace, Points of Interest, Bosses, NPCs, Tips |
 | dungeon | Overview, Location, Sites of Grace, Walkthrough, Enemies, Boss, Items, Tips |
 | landmark | Overview, Location, Sites of Grace, What's Here, Items, Tips |
 | npc | Overview, Location, Services, Questline, Rewards, Tips |
@@ -64,7 +64,14 @@ when a section doesn't apply.
   north of ...`. Names are checked against the game data.
 - **Items:** one bullet per item with the name in bold: `- **Crafting Kit** — bought from
   Kalé`. Names are checked against the game data (a mismatch is a warning, since community
-  names vary).
+  names vary). Region entries have no Items section: pickups belong to the landmark or
+  dungeon entry where they're found.
+- **Drops and stacks:** the quantity goes right after the item name, before the chance:
+  `- **Bolt** (x5) — 10% drop chance`, not `- **Bolt** — 10% drop chance (x5)`.
+- **Scope:** entries cover Limgrave, Stormhill, the Weeping Peninsula, Stormveil Castle and
+  the Stranded Graveyard. When a questline continues elsewhere (Varré, Blaidd, Ranni), cover
+  the Limgrave steps in full and summarize the rest under a "Later steps (outside Limgrave)"
+  line, marked out of scope.
 - **`[check]`:** marks a fact to confirm. Verified entries can't contain it.
 - **HTML comments** (`<!-- ... -->`) are writing hints from the templates. They're ignored
   by the search index and can stay or go.
@@ -74,6 +81,14 @@ when a section doesn't apply.
 - Numbers come from the pinned regulation 1.17.3 data in `data/processed/`.
 - Enemy HP from the facts tool already includes area scaling (e.g. Limgrave ×1.141,
   Stormveil Castle ×1.656), which is what you see in game.
+- **Stance:** the facts tool's `enemy` command shows each enemy's stance bar
+  (NpcParam `superArmorDurability`). The chat's `calculate_stance_damage` tool gives a weapon's
+  stance damage per attack and the hits needed to break an enemy.
+- **Criticals:** the facts tool's `enemy` command lists which critical hits work on an
+  enemy (backstab, riposte after a parry, critical after a stance break), read from
+  ThrowParam. The mapping from ThrowParam groups to critical types is inferred (see
+  `CRITICAL_GROUPS` in `pipeline/guide_data.py`), so confirm it in game before marking an
+  entry verified.
 - Item names are community labels from Smithbox's Paramdex, not the game's own text. They
   match in-game names almost always, but double-check odd ones.
 - Game text (item descriptions, dialogue) is FromSoftware's: paraphrase it, don't paste it.
