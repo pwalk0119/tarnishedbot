@@ -171,3 +171,43 @@ def test_templates_have_required_sections() -> None:
         assert entry is not None, report.errors
         for name in gc.REQUIRED_SECTIONS[entry.meta["type"]]:
             assert name in entry.sections, f"{path.name} lacks {name}"
+
+
+@needs_data
+def test_area_checklist_stormfoot() -> None:
+    c = gd.area_checklist("Stormfoot Catacombs")
+    assert [g.name for g in c.graces] == ["Stormfoot Catacombs"]
+    assert ("Root Resin", 2) in [i for lot in c.pickups for i in lot.items]
+    assert ("Wandering Noble Ashes", 1) in [i for lot in c.pickups for i in lot.items]
+    assert [i for lot in c.boss_drops for i in lot.items] == [("Noble Sorcerer Ashes", 1)]
+    (boss,) = c.bosses
+    assert boss.runes == 1300
+    assert 1200 in {v.hp for v in boss.variants}
+
+
+def test_world_xz_and_relative_direction() -> None:
+    assert gd.world_xz("m60_42_36_00", 10.0, 20.0) == (42 * 256 + 10.0, 36 * 256 + 20.0)
+    assert gd.world_xz("m30_02_00_00", 1.0, 2.0) is None
+    grace = gd.Grace(1, "Test", "Limgrave", "m30_02_00_00", 0.0, 10.0, 0.0)
+    north_east_below = gd.MapPlacement("m30_02_00_00", "gather", "p", 1, "x", 30.0, 0.0, 30.0)
+    assert gd.relative_to(north_east_below, grace) == "42 m NE, 10 m below"
+    west = gd.MapPlacement("m30_02_00_00", "gather", "p", 1, "x", -20.0, 11.0, 0.0)
+    assert gd.relative_to(west, grace) == "20 m W"
+
+
+needs_placements = pytest.mark.skipif(
+    not gd.placements_available(), reason="map placements not extracted"
+)
+
+
+@needs_placements
+def test_stormfoot_map_placements() -> None:
+    # Matches a full in-game route: 5 Grave Glovewort, 1 Ghost Glovewort, 4 corpses.
+    anchor, rows = gd.area_placements("Stormfoot Catacombs")
+    assert anchor is not None and anchor.map_id == "m30_02_00_00"
+    gathered = [p.name for p in rows if p.kind == "gather"]
+    assert gathered.count("Grave Glovewort [1]") == 5
+    assert gathered.count("Ghost Glovewort [1]") == 1
+    assert len([p for p in rows if p.kind == "treasure"]) == 4
+    names = [p.name for p in rows if p.kind == "enemy"]
+    assert names.count("Imp") >= 10

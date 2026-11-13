@@ -50,6 +50,7 @@ TABLES = {
     "ThrowParam.csv": "throw_param",
     "AtkParam_Pc.csv": "atk_param_pc",
     "BehaviorParam_PC.csv": "behavior_param_pc",
+    "AssetEnvironmentGeometryParam.csv": "asset_environment_geometry_param",
 }
 META_TABLE = "load_meta"
 

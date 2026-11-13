@@ -75,7 +75,8 @@ Game data is extracted **offline** from a local copy of the game (version pinned
 | CSVs | Source |
 |---|---|
 | EquipParamWeapon, ReinforceParamWeapon, CalcCorrectGraph, AttackElementCorrectParam | Smithbox Param Editor CSV export |
-| BonfireWarpParam (sites of grace), BonfireWarpSubCategoryParam, ShopLineupParam, ShopLineupParam_Recipe, NpcParam, SpEffectParam, ItemLotParam_enemy, ItemLotParam_map, GameAreaParam, WorldMapPointParam, WorldMapPlaceNameParam, EquipParamGoods, EquipParamProtector, EquipParamAccessory, EquipParamGem, Magic, SwordArtsParam, EquipMtrlSetParam | WitchyBND + `pipeline/witchy_to_csv.py` |
+| BonfireWarpParam (sites of grace), BonfireWarpSubCategoryParam, ShopLineupParam, ShopLineupParam_Recipe, NpcParam, SpEffectParam, ItemLotParam_enemy, ItemLotParam_map, GameAreaParam, WorldMapPointParam, WorldMapPlaceNameParam, EquipParamGoods, EquipParamProtector, EquipParamAccessory, EquipParamGem, Magic, SwordArtsParam, EquipMtrlSetParam, ThrowParam, AtkParam_Pc, BehaviorParam_PC, AssetEnvironmentGeometryParam | WitchyBND + `pipeline/witchy_to_csv.py` |
+| MapPlacements (enemies, corpse/chest pickups and gatherables with positions, per map) | Map files exported with Smithbox + `pipeline/map_placements.py` |
 
 To re-export with WitchyBND: copy `regulation.bin` out of the game folder, run `WitchyBND.exe -s regulation.bin`, then `WitchyBND.exe -s <Param>.param` for each param in the unpacked `regulation-bin` folder, and convert:
 
@@ -84,3 +85,13 @@ uv run python -m pipeline.witchy_to_csv <path>/regulation-bin BonfireWarpParam S
 ```
 
 Both routes give identical values; the four weapon tables were cross-checked value for value.
+
+### Map placements
+
+Map files (`map/mapstudio/*.msb.dcx`) come from Smithbox's file browser, which reads the packed game archives. Its project must live **outside** the game folder (we use `C:\EldenTools\smithbox-project`); a project inside the game folder once caused Smithbox to save over `regulation.bin`. Shadow of the Erdtree maps (`m61_*`) fail to export without the DLC and are skipped anyway. Then:
+
+```
+uv run python -m pipeline.map_placements C:/EldenTools/smithbox-project/map/mapstudio --work C:/EldenTools/maps
+```
+
+This copies the base-game maps into the work folder, converts them with WitchyBND, and writes `data/processed/MapPlacements.csv`. The map files themselves are never committed.

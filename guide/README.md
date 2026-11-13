@@ -6,6 +6,29 @@ Markdown file under `entries/`. The search index (ChromaDB, coming next) splits 
 
 ## Workflow
 
+For dungeons and landmarks, start with the data checklist and a route pass, not prose:
+
+1. Print the area's checklist: graces, one-time pickups, bosses (HP, stance, runes,
+   criticals), boss drops, and from the map files every enemy (with counts), corpse or
+   chest pickup and gatherable, each with its distance and direction from the grace.
+   Open-world areas include everything within `--radius` metres of the area's grace.
+   ```
+   uv run python -m pipeline.guide_facts dungeon "Stormfoot Catacombs"
+   ```
+2. Play the area once and write a **route pass**: one short line per room, covering exits,
+   enemies (count, ambush spots) and anything picked up or interacted with. Shorthand or
+   voice-memo transcripts are fine:
+   ```
+   Entrance → stairs → split: straight = room A, right = stairs to boss door
+   Room A: 2 Imps (1 ambush L corner), Root Resin corpse
+   Boss-door room: Glovewort, summon pool. Stairs L → ledge room
+   ```
+3. Claude drafts the entry from the route pass plus the checklist, and lists anything in
+   the checklist that the route pass doesn't place.
+4. Review the flagged items, then continue from step 4 below.
+
+For every entry:
+
 1. Pick a `todo` entry from [coverage.md](coverage.md).
 2. Copy the template for its type from `templates/` into `entries/<type>/<slug>.md`
    (slug = lowercase title with dashes, e.g. `church-of-elleh.md`).

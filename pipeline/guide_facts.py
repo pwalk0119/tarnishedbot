@@ -84,6 +84,100 @@ def cmd_enemy(args: argparse.Namespace) -> None:
         print()
 
 
+def cmd_dungeon(args: argparse.Namespace) -> None:
+    c = gd.area_checklist(args.area)
+    print(f"# {c.area} — checklist from params")
+    print()
+    print("## Sites of Grace")
+    for g in c.graces:
+        print(f"- {g.name}")
+    if not c.graces:
+        print("- none found by name")
+    print()
+    print("## One-time pickups (corpses and chests)")
+    for lot in c.pickups:
+        items = ", ".join(f"{n} (x{q})" if q > 1 else n for n, q in lot.items)
+        print(f"- {items} — lot {lot.lot_id}")
+    if not c.pickups:
+        print("- none labeled for this area")
+    print()
+    print("## Bosses")
+    for b in c.bosses:
+        print(f"- **{b.name}** — {b.runes:,} runes")
+        seen = set()
+        for v in b.variants:
+            key = (v.name, v.hp, v.stance)
+            if key in seen:
+                continue
+            seen.add(key)
+            crits = ", ".join(gd.criticals(v.id)) or "none found"
+            print(f"  - {v.name}: {v.hp:,} HP, stance {v.stance}, criticals: {crits}")
+    for lot in c.boss_drops:
+        items = ", ".join(f"{n} (x{q})" if q > 1 else n for n, q in lot.items)
+        print(f"- Boss drop: {items} — lot {lot.lot_id}")
+    if not c.bosses and not c.boss_drops:
+        print("- none found")
+    print()
+    if gd.placements_available():
+        print_placements(args.area, args.radius, args.height)
+        return
+    print(
+        "Not in the params: gatherable plants (e.g. Glovewort), enemy placements, levers "
+        "and positions. Those come from the map files or the route pass."
+    )
+
+
+def print_placements(area: str, radius: float, height: float) -> None:
+    anchor, rows = gd.area_placements(area, radius, height)
+    if anchor is None:
+        print(f"## Map data\n- no grace matches {area!r}, so the map area is unknown")
+        return
+    open_world = anchor.map_id.startswith("m60_")
+    scope = (
+        f"within {radius:.0f} m and ±{height:.0f} m height of the {anchor.name} grace"
+        if open_world
+        else f"whole map {anchor.map_id}"
+    )
+    print(f"## Map data ({scope}; positions relative to the {anchor.name} grace)")
+
+    enemies: dict[str, list[gd.MapPlacement]] = {}
+    for p in rows:
+        if p.kind == "enemy" and p.name not in gd.SYSTEM_NPCS:
+            enemies.setdefault(p.name, []).append(p)
+    print("\n### Enemies")
+    for name, group in sorted(enemies.items(), key=lambda kv: -len(kv[1])):
+        print(f"- {name} x{len(group)} (NpcParam {group[0].param_id})")
+    if not enemies:
+        print("- none")
+
+    for kind, title in (("treasure", "Corpse and chest pickups"), ("gather", "Gatherables")):
+        print(f"\n### {title}")
+        items = sorted((p for p in rows if p.kind == kind), key=lambda p: (p.name, p.y))
+        if kind == "gather" and open_world:
+            # Open-world plants are everywhere; counts are enough.
+            counts: dict[str, int] = {}
+            for p in items:
+                counts[p.name] = counts.get(p.name, 0) + 1
+            for name, n in sorted(counts.items(), key=lambda kv: -kv[1]):
+                print(f"- {name} x{n}")
+        else:
+            for p in items:
+                print(f"- {p.name} — {gd.relative_to(p, anchor)} (lot {p.param_id}, {p.part})")
+        if not items:
+            print("- none")
+    if open_world:
+        event_lots = gd.tile_event_lots(anchor.map_id)
+        if event_lots:
+            print(f"\n### Given by events in tile {anchor.map_id} (no position in the map data)")
+            for lot in event_lots:
+                items = ", ".join(f"{n} (x{q})" if q > 1 else n for n, q in lot.items)
+                print(f"- {items} — {lot.label} (lot {lot.lot_id})")
+    print(
+        "\nLevers, doors, traps and room layout aren't extracted. Positions are straight-line "
+        "from the grace, so use them to place things, not as directions."
+    )
+
+
 def cmd_boss(args: argparse.Namespace) -> None:
     rows = gd.boss_runes(args.name)
     if not rows:
@@ -111,6 +205,20 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("name")
     p.add_argument("--all", action="store_true", help="Include unscaled template rows")
     sub.add_parser("boss", help="Boss rune rewards").add_argument("name")
+    p = sub.add_parser("dungeon", help="Checklist for one area")
+    p.add_argument("area")
+    p.add_argument(
+        "--radius",
+        type=float,
+        default=gd.DEFAULT_RADIUS,
+        help="Open-world areas: metres around the area's grace to include",
+    )
+    p.add_argument(
+        "--height",
+        type=float,
+        default=gd.DEFAULT_MAX_HEIGHT,
+        help="Open-world areas: max metres above or below the grace",
+    )
     sub.add_parser("item", help="Find an item by name").add_argument("name")
     args = parser.parse_args(argv)
     handlers = {
@@ -120,6 +228,7 @@ def main(argv: list[str] | None = None) -> None:
         "shop": cmd_shop,
         "enemy": cmd_enemy,
         "boss": cmd_boss,
+        "dungeon": cmd_dungeon,
         "item": cmd_item,
     }
     sys.stdout.reconfigure(encoding="utf-8")

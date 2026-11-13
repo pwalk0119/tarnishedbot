@@ -49,6 +49,7 @@ def table(param: str, data_dir: Path = PROCESSED_DIR) -> pd.DataFrame:
 def clear_cache() -> None:
     table.cache_clear()
     _item_index.cache_clear()
+    map_placements.cache_clear()
 
 
 def _norm(text: str) -> str:
@@ -100,6 +101,10 @@ class Grace:
     id: int
     name: str
     group: str
+    map_id: str = ""  # e.g. m60_42_37_00 (open world tile) or m30_02_00_00 (catacomb)
+    x: float = 0.0
+    y: float = 0.0
+    z: float = 0.0
 
 
 # Paramdex labels that differ from the in-game grace name, confirmed in game.
@@ -121,7 +126,20 @@ def graces(group: str | None = None) -> list[Grace]:
         group_name = split_label(groups.get(int(row["bonfireSubCategoryId"]), ""))[1]
         group_name = group_name or label_group
         if group is None or _norm(group_name) == _norm(group):
-            out.append(Grace(int(row["ID"]), name, group_name))
+            map_id = (
+                f"m{int(row['areaNo']):02d}_{int(row['gridXNo']):02d}_{int(row['gridZNo']):02d}_00"
+            )
+            out.append(
+                Grace(
+                    int(row["ID"]),
+                    name,
+                    group_name,
+                    map_id,
+                    float(row["posX"]),
+                    float(row["posY"]),
+                    float(row["posZ"]),
+                )
+            )
     return out
 
 
@@ -305,3 +323,220 @@ def criticals(npc_id: int) -> list[str]:
     rows = throws[(throws["AtkChrId"] == 0) & (throws["DefChrId"] == model_id(npc_id))]
     groups = {int(i) // 1_000_000 for i in rows["ID"]}
     return [label for g, label in CRITICAL_GROUPS.items() if g in groups]
+
+
+# ------------------------------------------------------------------- areas
+
+# Label groups that don't contain the area's own name.
+AREA_LABEL_ALIASES = {
+    "stormveil castle": ["ld stormveil"],
+    "stranded graveyard": ["ld stranded graveyard"],
+}
+IN_SCOPE_SCALING = ("Stranded Graveyard", "Limgrave", "Weeping Peninsula", "Stormveil Castle")
+
+
+@dataclass
+class AreaLot:
+    lot_id: int
+    label: str  # full Paramdex label, e.g. "[Limgrave - Stormfoot Catacombs] Root Resin"
+    items: list[tuple[str, int]]  # (name, quantity)
+
+
+@dataclass
+class AreaBoss:
+    label: str
+    name: str
+    runes: int
+    variants: list[EnemyVariant] = field(default_factory=list)
+
+
+@dataclass
+class AreaChecklist:
+    area: str
+    graces: list[Grace]
+    pickups: list[AreaLot]  # one-time map pickups (corpses, chests)
+    boss_drops: list[AreaLot]
+    bosses: list[AreaBoss]
+
+
+def _matches_area(group: str, area: str) -> bool:
+    g, a = _norm(group), _norm(area)
+    return bool(a) and (a in g or any(alias in g for alias in AREA_LABEL_ALIASES.get(a, [])))
+
+
+def lot_items(row: pd.Series) -> list[tuple[str, int]]:
+    out = []
+    for i in range(1, 9):
+        kind = LOT_CATEGORY.get(int(row[f"lotItemCategory{i:02d}"]))
+        item_id = int(row[f"lotItemId{i:02d}"])
+        if kind and item_id > 0:
+            out.append((item_name(kind, item_id), max(int(row[f"lotItemNum{i:02d}"]), 1)))
+    return out
+
+
+def area_checklist(area: str) -> AreaChecklist:
+    """Everything the params know about one area, keyed off Paramdex labels.
+
+    Pickups are one-time map item lots. Gatherable plants, enemy placements, levers and
+    positions aren't in the params (they're in the map files).
+    """
+    lots = table("ItemLotParam_map")
+    pickups, boss_drops = [], []
+    for lot_id, name in lots["Name"].items():
+        group, _ = split_label(name)
+        if not _matches_area(group, area):
+            continue
+        lot = AreaLot(int(lot_id), str(name), lot_items(lots.loc[lot_id]))
+        # Boss lots are labeled "[<Area> - <Boss>]"; pickups "[<Region> - <Area>]".
+        (boss_drops if _norm(group).startswith(_norm(area)) else pickups).append(lot)
+
+    bosses = []
+    for _, row in table("GameAreaParam").iterrows():
+        group, boss = split_label(row["Name"])
+        if boss and _matches_area(group, area):
+            variants = [
+                v
+                for v in enemy(boss)
+                if v.area_scaling and any(s in v.area_scaling for s in IN_SCOPE_SCALING)
+            ]
+            bosses.append(AreaBoss(str(row["Name"]), boss, int(row["bonusSoul_single"]), variants))
+
+    area_graces = [
+        g for g in graces() if _norm(area) in _norm(g.name) or _norm(area) == _norm(g.group)
+    ]
+    return AreaChecklist(area, area_graces, pickups, boss_drops, bosses)
+
+
+# -------------------------------------------------------------- map placements
+
+# Built by pipeline.map_placements from the exported map files (MSB).
+PLACEMENTS_CSV = "MapPlacements.csv"
+TILE_SIZE = 256.0  # open-world tiles m60_XX_ZZ_00 are 256 m squares
+DEFAULT_RADIUS = 150.0
+DEFAULT_MAX_HEIGHT = 30.0
+# Map "enemies" that are game system objects, not characters.
+SYSTEM_NPCS = {"BuddyStone", "Talk Dummy", "Bonfire"}
+COMPASS = ("E", "NE", "N", "NW", "W", "SW", "S", "SE")
+
+
+@dataclass
+class MapPlacement:
+    map: str
+    kind: str  # enemy | treasure | gather
+    part: str
+    param_id: int
+    name: str
+    x: float
+    y: float
+    z: float
+    grace: str = ""  # nearest site of grace
+    grace_dist: float = 0.0  # metres, horizontal
+    region: str = ""  # that grace's group, e.g. Limgrave
+
+
+def placements_available(data_dir: Path = PROCESSED_DIR) -> bool:
+    return (data_dir / PLACEMENTS_CSV).is_file()
+
+
+def world_xz(map_id: str, x: float, z: float) -> tuple[float, float] | None:
+    """Open-world tile coordinates -> world coordinates. None for dungeon maps."""
+    m = re.match(r"^m60_(\d\d)_(\d\d)_00$", map_id)
+    if not m:
+        return None
+    return int(m.group(1)) * TILE_SIZE + x, int(m.group(2)) * TILE_SIZE + z
+
+
+def _grace_xz(g: Grace) -> tuple[float, float]:
+    return world_xz(g.map_id, g.x, g.z) or (g.x, g.z)
+
+
+@cache
+def map_placements(data_dir: Path = PROCESSED_DIR) -> list[MapPlacement]:
+    """Every placed enemy, corpse/chest pickup and gatherable, tagged with its nearest grace.
+
+    Dungeon placements use the graces inside the same map; open-world ones use every
+    open-world grace, by world position.
+    """
+    df = pd.read_csv(data_dir / PLACEMENTS_CSV)
+    all_graces = graces()
+    open_world = [g for g in all_graces if g.map_id.startswith("m60_")]
+    by_map: dict[str, list[Grace]] = {}
+    for g in all_graces:
+        by_map.setdefault(g.map_id, []).append(g)
+
+    out = []
+    for r in df.itertuples(index=False):
+        p = MapPlacement(
+            str(r.map), str(r.kind), str(r.part), int(r.param_id), str(r.name),
+            float(r.x), float(r.y), float(r.z),
+        )  # fmt: skip
+        pos = world_xz(p.map, p.x, p.z)
+        candidates = open_world if pos else by_map.get(p.map, [])
+        pos = pos or (p.x, p.z)
+        best = min(
+            candidates,
+            key=lambda g: math.dist(pos, _grace_xz(g)),
+            default=None,
+        )
+        if best:
+            p.grace, p.region = best.name, best.group
+            p.grace_dist = round(math.dist(pos, _grace_xz(best)), 1)
+        out.append(p)
+    return out
+
+
+def relative_to(p: MapPlacement, g: Grace) -> str:
+    """'40 m NE, 6 m below' from grace g to placement p (same map or both open world)."""
+    gx, gz = _grace_xz(g)
+    px, pz = world_xz(p.map, p.x, p.z) or (p.x, p.z)
+    dx, dz, dy = px - gx, pz - gz, p.y - g.y
+    dist = math.hypot(dx, dz)
+    # North is +Z, east is +X: Church of Elleh sits at -X/+Z from The First Step (northwest),
+    # and Gatefront's tile (gridZ 37) is north of theirs (gridZ 36).
+    angle = math.degrees(math.atan2(dz, dx)) % 360
+    direction = COMPASS[int((angle + 22.5) // 45) % 8]
+    height = f", {abs(dy):.0f} m {'above' if dy > 0 else 'below'}" if abs(dy) >= 3 else ""
+    return f"{dist:.0f} m {direction}{height}"
+
+
+def tile_event_lots(map_id: str) -> list[AreaLot]:
+    """Map item lots that event scripts award in an open-world tile, e.g. the Troll Carriage
+    chests near Gatefront (942370060, 942370070 for m60_42_37_00). They have no position."""
+    m = re.match(r"^m60_(\d\d)_(\d\d)_00$", map_id)
+    if not m:
+        return []
+    prefix = f"9{m.group(1)}{m.group(2)}"
+    lots = table("ItemLotParam_map")
+    return [
+        AreaLot(int(i), str(lots.at[i, "Name"]), lot_items(lots.loc[i]))
+        for i in lots.index
+        if len(str(i)) == 9 and str(i).startswith(prefix)
+    ]
+
+
+def area_placements(
+    area: str,
+    radius: float = DEFAULT_RADIUS,
+    max_height: float = DEFAULT_MAX_HEIGHT,
+    data_dir: Path = PROCESSED_DIR,
+) -> tuple[Grace | None, list[MapPlacement]]:
+    """Placements for an area: its whole map for dungeons, or, in the open world, within
+    `radius` metres of the area's grace and `max_height` metres above or below it (so cliff
+    tops like Stormhill above Gatefront stay out). Returns (anchor grace, placements)."""
+    needle = _norm(area)
+    candidates = [g for g in graces() if g.map_id]
+    anchor = next((g for g in candidates if _norm(g.name) == needle), None) or next(
+        (g for g in candidates if needle in _norm(g.name) or _norm(g.name) in needle), None
+    )
+    if anchor is None:
+        return None, []
+    rows = map_placements(data_dir)
+    if not anchor.map_id.startswith("m60_"):
+        return anchor, [p for p in rows if p.map == anchor.map_id]
+    gx, gz = _grace_xz(anchor)
+    near = []
+    for p in rows:
+        pos = world_xz(p.map, p.x, p.z)
+        if pos and math.dist(pos, (gx, gz)) <= radius and abs(p.y - anchor.y) <= max_height:
+            near.append(p)
+    return anchor, near

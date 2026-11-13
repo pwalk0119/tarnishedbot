@@ -18,7 +18,7 @@ def test_tables_match_csv_row_counts(param_db_url: str) -> None:
     engine = create_engine(param_db_url)
     with engine.connect() as conn:
         for csv_name, table in TABLES.items():
-            expected = len(pd.read_csv(PROCESSED_DIR / csv_name))
+            expected = len(pd.read_csv(PROCESSED_DIR / csv_name, low_memory=False))
             actual = conn.execute(text(f'SELECT COUNT(*) FROM "{table}"')).scalar_one()
             assert actual == expected, table
     engine.dispose()

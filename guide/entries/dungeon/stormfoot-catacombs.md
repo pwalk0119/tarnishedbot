@@ -30,7 +30,7 @@ from Stormhill, directly west of Groveside Cave. It isn't on the road up to Stor
    bottom a ghostly noble stands by the wall; you can talk to him. The hallway splits here:
    one way leads straight into a room, the other turns right.
 2. **Room straight ahead.** Two Imps, one of them hiding in the left corner to ambush you.
-   Two Root Resin grow here.
+   Pick up the Root Resin (x2) here.
 3. **Right-hand hallway.** It goes down some stairs to the room with the boss door. There's
    a Grave Glovewort [1] and a summoning pool here.
 4. **Down the stairs to the left.** Two Imps wait on a ledge above this room. They either
@@ -59,7 +59,8 @@ from Stormhill, directly west of Groveside Cave. It isn't on the road up to Stor
     and starts throwing darts. This room is a dead end, but it holds the **Wandering Noble
     Ashes** on a noble's corpse, with the fourth Grave Glovewort [1] next to it.
 11. **Lever.** Go back to the ledge room and drop down from the ledge to its middle level.
-    Pull the lever there: it opens the boss door.
+    Pull the lever there: it opens the boss door. The fifth Grave Glovewort [1] is just
+    to the left of the lever.
 12. **Boss.** Return to the room from step 3 and go through the boss door to fight the
     Erdtree Burial Watchdog. Use the summoning pool, the Wandering Noble Ashes, or another
     Spirit Ash.
@@ -83,10 +84,12 @@ backstabbed, but its stance can be broken for a critical hit. Spirit Ashes help 
 Pickups (one time only):
 
 - **Wandering Noble Ashes** — on a noble's corpse in the dart Imp's room (dead end)
-- **Grave Glovewort [1]** — four separate pickups: in the boss-door room, in the ledge
-  room (lower and upper level), and next to the Wandering Noble Ashes
+- **Grave Glovewort [1]** — five separate pickups: in the boss-door room, in the ledge
+  room (lower level, upper level, and next to the lever on the middle level), and next to
+  the Wandering Noble Ashes
 - **Ghost Glovewort [1]** — next to the corpse in the five-Imp room
 - **Prattling Pate "Hello"** — behind the first fire trap
+- **Root Resin** (x2) — in the room straight ahead from the entrance
 - **Smoldering Butterfly** (x3) — on the corpse in the five-Imp room
 
 Boss drop:
@@ -95,7 +98,7 @@ Boss drop:
 
 Farmable (they respawn when you rest):
 
-- **Root Resin** — two in the room straight ahead from the entrance
+- **Root Resin**
 - **Grave Violet**
 - **Smoldering Butterfly**
 
