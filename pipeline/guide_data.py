@@ -29,6 +29,17 @@ ITEM_TABLES = {
 }
 SHOP_EQUIP_TYPE = {0: "weapon", 1: "protector", 2: "accessory", 3: "goods", 4: "gem"}
 LOT_CATEGORY = {1: "goods", 2: "weapon", 3: "protector", 4: "accessory", 5: "gem"}
+# Damage type -> NpcParam multiplier column. "Standard" is plain physical damage.
+DAMAGE_RATE_COLS = {
+    "standard": "neutralDamageCutRate",
+    "slash": "slashDamageCutRate",
+    "strike": "blowDamageCutRate",
+    "pierce": "thrustDamageCutRate",
+    "magic": "magicDamageCutRate",
+    "fire": "fireDamageCutRate",
+    "lightning": "thunderDamageCutRate",
+    "holy": "darkDamageCutRate",
+}
 # How many follow-on rows (ID+1, ID+2, ...) an enemy's item lot can chain into.
 MAX_LOT_CHAIN = 10
 
@@ -50,6 +61,7 @@ def clear_cache() -> None:
     table.cache_clear()
     _item_index.cache_clear()
     map_placements.cache_clear()
+    located_graces.cache_clear()
 
 
 def _norm(text: str) -> str:
@@ -105,6 +117,7 @@ class Grace:
     x: float = 0.0
     y: float = 0.0
     z: float = 0.0
+    entity_id: int = 0  # the grace object's EntityID in the map file
 
 
 # Paramdex labels that differ from the in-game grace name, confirmed in game.
@@ -138,6 +151,7 @@ def graces(group: str | None = None) -> list[Grace]:
                     float(row["posX"]),
                     float(row["posY"]),
                     float(row["posZ"]),
+                    int(row["bonfireEntityId"]),
                 )
             )
     return out
@@ -215,6 +229,14 @@ class EnemyVariant:
     runes: int
     stance: int
     drops: list[Drop] = field(default_factory=list)
+    # Damage multipliers by type (1.2 = takes 20% more), from NpcParam *DamageCutRate.
+    damage_rates: dict[str, float] = field(default_factory=dict)
+
+    def weaknesses(self) -> tuple[list[str], list[str]]:
+        """(weak to, resists), e.g. (["fire +20%"], ["lightning -20%"])."""
+        weak = [f"{k} +{round((r - 1) * 100)}%" for k, r in self.damage_rates.items() if r > 1]
+        strong = [f"{k} -{round((1 - r) * 100)}%" for k, r in self.damage_rates.items() if r < 1]
+        return weak, strong
 
 
 def drops(lot_id: int) -> list[Drop]:
@@ -277,6 +299,7 @@ def enemy(name: str, *, include_unscaled: bool = False) -> list[EnemyVariant]:
                 area_scaling=scaling,
                 runes=int(row["getSoul"]),
                 stance=int(row["superArmorDurability"]),
+                damage_rates={k: round(float(row[c]), 2) for k, c in DAMAGE_RATE_COLS.items()},
                 drops=drops(lot) if lot > 0 else [],
             )
         )
@@ -309,6 +332,10 @@ CRITICAL_GROUPS = {
 }
 
 
+# Human NPC rows (NpcParam IDs with 9 digits, e.g. Patches 523090010) use model c0000.
+HUMAN_NPC_MIN_ID = 100_000_000
+
+
 def model_id(npc_id: int) -> int:
     """NpcParam IDs start with the character model: 43110010 -> c4311."""
     return npc_id // 10000
@@ -319,6 +346,19 @@ def criticals(npc_id: int) -> list[str]:
 
     An empty list means ThrowParam has no player throws against this model at all.
     """
+    if npc_id >= HUMAN_NPC_MIN_ID:
+        # Human NPCs (Patches, invaders such as Nerijus) share the player model c0000. Its
+        # ThrowParam rows include 10/11 (riposte) and 20 (backstab, same animation as group
+        # 10). Like players, they can't be stance-broken into a critical (confirmed on
+        # Patches); breaking their guard opens them to a riposte instead.
+        rows = table("ThrowParam")
+        rows = rows[(rows["AtkChrId"] == 0) & (rows["DefChrId"] == 0)]
+        ids = {int(i) for i in rows["ID"]}
+        found = {
+            "backstab": 20 in ids,
+            "riposte after a parry or guard break": bool({10, 11} & ids),
+        }
+        return [label for label, ok in found.items() if ok]
     throws = table("ThrowParam")
     rows = throws[(throws["AtkChrId"] == 0) & (throws["DefChrId"] == model_id(npc_id))]
     groups = {int(i) // 1_000_000 for i in rows["ID"]}
@@ -416,6 +456,8 @@ DEFAULT_RADIUS = 150.0
 DEFAULT_MAX_HEIGHT = 30.0
 # Map "enemies" that are game system objects, not characters.
 SYSTEM_NPCS = {"BuddyStone", "Talk Dummy", "Bonfire"}
+GRACE_NPC_PARAM = 10000000  # the "Bonfire" object placed at each site of grace
+GRACE_ENTITY_OFFSET = 1000
 COMPASS = ("E", "NE", "N", "NW", "W", "SW", "S", "SE")
 
 
@@ -450,6 +492,42 @@ def _grace_xz(g: Grace) -> tuple[float, float]:
     return world_xz(g.map_id, g.x, g.z) or (g.x, g.z)
 
 
+def dungeon_map_of(grace_id: int) -> str | None:
+    """Dungeon graces encode their map in the ID: 300200 -> m30_02_00_00 (Stormfoot)."""
+    s = str(grace_id)
+    if len(s) == 6 and 10 <= int(s[:2]) < 60:
+        return f"m{s[:2]}_{s[2:4]}_00_00"
+    return None
+
+
+@cache
+def located_graces(data_dir: Path = PROCESSED_DIR) -> list[Grace]:
+    """graces(), with dungeon graces moved to their dungeon map.
+
+    Some dungeon graces (e.g. Murkwater Cave, 310000) carry open-world coordinates in
+    BonfireWarpParam: the spot above the cave. Their real position is the grace object in
+    the dungeon's map file, found by bonfireEntityId.
+    """
+    df = pd.read_csv(data_dir / PLACEMENTS_CSV)
+    objects = {
+        int(r.entity_id): r
+        for r in df[df["param_id"] == GRACE_NPC_PARAM].itertuples(index=False)
+        if int(r.entity_id) > 0
+    }
+    out = []
+    for g in graces():
+        dungeon = dungeon_map_of(g.id)
+        # The grace asset is <id>1950; the Bonfire character beside it is <id>0950.
+        obj = objects.get(g.entity_id) or objects.get(g.entity_id - GRACE_ENTITY_OFFSET)
+        if dungeon and dungeon != g.map_id and obj is not None and str(obj.map) == dungeon:
+            g = Grace(
+                g.id, g.name, g.group, dungeon, float(obj.x), float(obj.y), float(obj.z),
+                g.entity_id,
+            )  # fmt: skip
+        out.append(g)
+    return out
+
+
 @cache
 def map_placements(data_dir: Path = PROCESSED_DIR) -> list[MapPlacement]:
     """Every placed enemy, corpse/chest pickup and gatherable, tagged with its nearest grace.
@@ -458,7 +536,7 @@ def map_placements(data_dir: Path = PROCESSED_DIR) -> list[MapPlacement]:
     open-world grace, by world position.
     """
     df = pd.read_csv(data_dir / PLACEMENTS_CSV)
-    all_graces = graces()
+    all_graces = located_graces(data_dir)
     open_world = [g for g in all_graces if g.map_id.startswith("m60_")]
     by_map: dict[str, list[Grace]] = {}
     for g in all_graces:
@@ -524,7 +602,7 @@ def area_placements(
     `radius` metres of the area's grace and `max_height` metres above or below it (so cliff
     tops like Stormhill above Gatefront stay out). Returns (anchor grace, placements)."""
     needle = _norm(area)
-    candidates = [g for g in graces() if g.map_id]
+    candidates = [g for g in located_graces(data_dir) if g.map_id]
     anchor = next((g for g in candidates if _norm(g.name) == needle), None) or next(
         (g for g in candidates if needle in _norm(g.name) or _norm(g.name) in needle), None
     )

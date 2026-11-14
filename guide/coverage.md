@@ -22,11 +22,11 @@ Sites of grace and items are covered inside the entries they belong to, and adde
 |---|---|
 | Cave of Knowledge | todo |
 | Fringefolk Hero's Grave | todo |
-| Groveside Cave | todo |
+| Groveside Cave | draft |
 | Stormfoot Catacombs | draft |
-| Coastal Cave | todo |
-| Murkwater Catacombs | todo |
-| Murkwater Cave | todo |
+| Coastal Cave | draft |
+| Murkwater Catacombs | draft |
+| Murkwater Cave | draft |
 | Limgrave Tunnels | todo |
 | Highroad Cave | todo |
 | Deathtouched Catacombs | todo |

@@ -211,3 +211,31 @@ def test_stormfoot_map_placements() -> None:
     assert len([p for p in rows if p.kind == "treasure"]) == 4
     names = [p.name for p in rows if p.kind == "enemy"]
     assert names.count("Imp") >= 10
+
+
+@needs_placements
+def test_dungeon_grace_moves_into_its_map() -> None:
+    # BonfireWarpParam gives Murkwater Cave's grace an open-world spot above the cave.
+    assert gd.dungeon_map_of(310000) == "m31_00_00_00"
+    assert gd.dungeon_map_of(61423700) is None
+    cave = next(g for g in gd.located_graces() if g.name == "Murkwater Cave")
+    assert cave.map_id == "m31_00_00_00"
+    anchor, rows = gd.area_placements("Murkwater Cave")
+    assert anchor.map_id == "m31_00_00_00"
+    assert "Patches (Boss)" in {p.name for p in rows}
+
+
+@needs_data
+def test_human_npc_criticals() -> None:
+    # Patches uses the human model c0000.
+    assert gd.criticals(523090010) == ["backstab", "riposte after a parry or guard break"]
+
+
+@needs_data
+def test_enemy_damage_weaknesses() -> None:
+    # Grave Warden Duelist takes extra slash; the cave Beastman extra fire, less lightning.
+    (duelist,) = [v for v in gd.enemy("Grave Warden Duelist (Boss)") if v.id == 34001110]
+    assert "slash +10%" in duelist.weaknesses()[0]
+    (beastman,) = [v for v in gd.enemy("Beastman of Farum Azula") if v.id == 39701910]
+    weak, strong = beastman.weaknesses()
+    assert "fire +20%" in weak and "lightning -20%" in strong

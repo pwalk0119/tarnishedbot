@@ -77,6 +77,9 @@ def cmd_enemy(args: argparse.Namespace) -> None:
         print(f"- **HP:** {v.hp:,}{scale}; base {v.base_hp:,}")
         print(f"- **Runes:** {v.runes:,}" + (" (bosses: see `boss`)" if v.runes == 0 else ""))
         print(f"- **Stance:** {v.stance}")
+        weak, strong = v.weaknesses()
+        print(f"- **Weak to:** {', '.join(weak) or 'nothing'}")
+        print(f"- **Resists:** {', '.join(strong) or 'nothing'}")
         crits = gd.criticals(v.id)
         print(f"- **Criticals:** {', '.join(crits) if crits else 'none found'} [check]")
         for d in v.drops:
