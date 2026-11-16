@@ -44,6 +44,14 @@ Build the local SQLite database from the committed CSVs (re-run after updating `
 uv run python -m pipeline.load_params
 ```
 
+Build the guide search index from `guide/entries/` (re-run after editing entries). Only
+`status: verified` entries are loaded; add `--include-drafts` while drafts are still being
+reviewed. The first run downloads the embedding model (about 90 MB).
+
+```bash
+uv run python -m pipeline.load_guide --include-drafts
+```
+
 ## Running
 
 From the project root, in two terminals:

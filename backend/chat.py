@@ -1,8 +1,8 @@
 """Claude chat loop with TarnishedBot's tools (manual tool-use loop).
 
 The loop sends the conversation to Claude, runs any tools it asks for
-(attack rating, weapon lookup), returns the results, and repeats until
-Claude answers or MAX_TOOL_ROUNDS is reached. Tool errors go back to
+(attack rating, weapon lookup, stance damage, guide search), returns the
+results, and repeats until Claude answers or MAX_TOOL_ROUNDS is reached. Tool errors go back to
 Claude as is_error results so it can recover or explain.
 """
 
@@ -16,6 +16,7 @@ import anthropic
 from pydantic import BaseModel, Field, ValidationError
 
 from tools.attack_rating import AFFINITY_OFFSETS, MAX_UPGRADE_LEVEL, calculate_ar
+from tools.guide_search import ENTRY_TYPES, search_guide
 from tools.stance import weapon_stance
 from tools.weapon_lookup import lookup_weapon
 
@@ -56,6 +57,13 @@ per attack and, given an enemy, the hits needed per attack (one entry per enemy 
 Answer with the few attacks that break stance fastest, such as guard counters or charged R2s, \
 not the whole table. If an enemy has several variants, give each stance value. Mention that \
 counter hits and buffs add more when it matters.
+
+For questions about places, routes, dungeons, bosses, enemies, NPCs and their quests, or where \
+to find an item, call search_guide and answer only from the passages it returns. Don't add \
+locations, quest steps or strategies from memory. If no passage answers the question (low \
+scores or unrelated titles), say the guide doesn't cover it yet. If a passage you used has \
+status "draft", add one short line saying that guide entry hasn't been checked yet. If a \
+passage has a credit, include the credit.
 
 When listing item drops or stacks, put the quantity right after the item name, then the \
 chance: "Bolt (x5) — 10% drop chance", never "Bolt — 10% drop chance (x5)".
@@ -159,6 +167,32 @@ TOOLS: list[dict[str, Any]] = [
             "additionalProperties": False,
         },
     },
+    {
+        "name": "search_guide",
+        "description": "Search TarnishedBot's Limgrave walkthrough (Limgrave, Stormhill, Weeping "
+        "Peninsula, Stormveil Castle, Stranded Graveyard) for locations, routes, dungeons, "
+        "bosses, enemies, NPCs and quests, and where items are found. Returns the closest "
+        "passages, best first, each with its entry title, section, a relevance score from 0 to 1, "
+        "its review status, and a credit line when one is required.",
+        "strict": True,
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "What to look for, in plain words, e.g. 'how to beat Margit' "
+                    "or 'where is the Sewing Needle'.",
+                },
+                "entry_type": {
+                    "type": "string",
+                    "enum": ["any", *ENTRY_TYPES],
+                    "description": "Limit results to one kind of entry, or 'any'.",
+                },
+            },
+            "required": ["query", "entry_type"],
+            "additionalProperties": False,
+        },
+    },
 ]
 
 
@@ -224,10 +258,17 @@ def _run_stance(args: dict[str, Any], database_url: str | None) -> str:
     return result.model_dump_json(exclude_none=True)
 
 
+def _run_guide_search(args: dict[str, Any], database_url: str | None) -> str:
+    entry_type = args.get("entry_type")
+    result = search_guide(args["query"], None if entry_type in (None, "", "any") else entry_type)
+    return result.model_dump_json(exclude_none=True)
+
+
 TOOL_HANDLERS: dict[str, Callable[[dict[str, Any], str | None], str]] = {
     "calculate_attack_rating": _run_attack_rating,
     "lookup_weapon": _run_lookup,
     "calculate_stance_damage": _run_stance,
+    "search_guide": _run_guide_search,
 }
 
 
