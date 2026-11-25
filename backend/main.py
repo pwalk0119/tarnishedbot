@@ -11,7 +11,7 @@ import anthropic
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from backend.chat import ChatResult, HistoryMessage, run_chat
+from backend.chat import DEFAULT_VOICE, ChatResult, HistoryMessage, Voice, run_chat
 from backend.config import Settings, get_settings
 
 log = logging.getLogger(__name__)
@@ -22,6 +22,7 @@ app = FastAPI(title="TarnishedBot API", version="0.2.0")
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     history: list[HistoryMessage] = []
+    voice: Voice = DEFAULT_VOICE
 
 
 class ChatResponse(ChatResult):
@@ -55,6 +56,7 @@ def chat(
             request.message,
             request.history,
             database_url=settings.database_url,
+            voice=request.voice,
         )
     except anthropic.AuthenticationError as exc:
         raise HTTPException(503, "The Anthropic API key was rejected. Check .env.") from exc

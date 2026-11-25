@@ -11,10 +11,13 @@ from backend.chat import (
     MAX_HISTORY_MESSAGES,
     MAX_TOOL_ROUNDS,
     TOOLS,
+    VOICE_PROMPTS,
+    VOICE_REMINDERS,
     HistoryMessage,
     build_messages,
     run_chat,
     run_tool,
+    system_prompt,
 )
 from backend.config import Settings, get_settings
 from backend.main import app, get_claude_client
@@ -146,6 +149,42 @@ def test_plain_answer_needs_no_tools() -> None:
     assert call["model"] == MODEL
     assert call["tools"] == TOOLS
     assert call["output_config"] == {"effort": "medium"}
+    assert call["system"] == system_prompt("veteran")
+
+
+# ------------------------------------------------------------------ voices
+
+
+def test_each_voice_keeps_the_shared_rules() -> None:
+    prompts = {v: system_prompt(v) for v in VOICE_PROMPTS}
+    assert set(prompts) == {"veteran", "in_character"}
+    for voice, prompt in prompts.items():
+        assert "Attack rating answers follow this shape" in prompt
+        assert "call search_guide" in prompt
+        assert prompt.endswith(VOICE_PROMPTS[voice])
+    assert prompts["veteran"] != prompts["in_character"]
+
+
+def test_unknown_voice_raises() -> None:
+    with pytest.raises(KeyError):
+        system_prompt("pirate")
+
+
+def test_switching_voice_keeps_history() -> None:
+    history = [
+        HistoryMessage(role="user", content="AR of a Longsword?"),
+        HistoryMessage(role="assistant", content="Longsword +0: 120 AR"),
+    ]
+    client = FakeClient([make_message([text("So it is, Tarnished.")], "end_turn")])
+    run_chat(client, MODEL, "and two-handed?", history, voice="in_character")
+    call = client.messages.calls[0]
+    assert call["system"] == system_prompt("in_character")
+    history_sent, newest = call["messages"][:-1], call["messages"][-1]
+    assert [m["content"] for m in history_sent] == ["AR of a Longsword?", "Longsword +0: 120 AR"]
+    assert newest["content"] == [
+        {"type": "text", "text": "and two-handed?"},
+        {"type": "text", "text": VOICE_REMINDERS["in_character"]},
+    ]
 
 
 def test_tool_call_round_trip() -> None:
@@ -267,7 +306,25 @@ def test_chat_endpoint_with_fake_client(api: TestClient) -> None:
     assert resp.status_code == 200
     assert resp.json()["reply"] == "Hello, Tarnished."
     sent = fake.messages.calls[0]["messages"]
-    assert [m["content"] for m in sent] == ["earlier", "hi"]
+    assert sent[0]["content"] == "earlier"
+    assert sent[1]["content"][0] == {"type": "text", "text": "hi"}
+
+
+def test_chat_endpoint_passes_voice(api: TestClient) -> None:
+    fake = FakeClient([make_message([text("Hail, Tarnished.")], "end_turn")])
+    app.dependency_overrides[get_claude_client] = lambda: fake
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        anthropic_api_key="test", claude_model=MODEL
+    )
+    resp = api.post("/chat", json={"message": "hi", "voice": "in_character"})
+    assert resp.status_code == 200
+    assert fake.messages.calls[0]["system"] == system_prompt("in_character")
+
+
+def test_chat_endpoint_rejects_unknown_voice(api: TestClient) -> None:
+    app.dependency_overrides[get_claude_client] = lambda: FakeClient([])
+    resp = api.post("/chat", json={"message": "hi", "voice": "pirate"})
+    assert resp.status_code == 422
 
 
 def test_chat_endpoint_without_api_key(api: TestClient) -> None:
