@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import math
 import os
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -224,13 +224,22 @@ class DamageLine(BaseModel):
     penalized_by: list[str] = []
 
 
+class AppliedBuff(BaseModel):
+    name: str
+    kind: str
+    # Stat increases, keyed str/dex/int/fai/arc. Empty = no stat change.
+    stats: dict[str, int]
+    duration_s: float | None = None
+
+
 class AttackRating(BaseModel):
     weapon_id: int
     weapon_name: str
     affinity: str
     upgrade_level: int
     two_handed: bool
-    # Stats after two-handing (Str can reach 148), keyed str/dex/int/fai/arc.
+    buffs: list[AppliedBuff] = []
+    # Stats after buffs and two-handing (Str can reach 148), keyed str/dex/int/fai/arc.
     effective_stats: dict[str, int]
     # Weapon's stat requirements, and the ones effective_stats doesn't meet.
     requirements: dict[str, int]
@@ -408,6 +417,7 @@ def calculate_ar(
     stats: Stats | Mapping[str, int],
     two_handed: bool = False,
     *,
+    buffs: Sequence[str] = (),
     tables: ParamTables | None = None,
 ) -> AttackRating:
     """Calculate displayed attack rating for one weapon, upgrade level, and stat line."""
@@ -442,11 +452,14 @@ def calculate_ar(
         )
 
     effective = stats.short()
+    applied = _apply_buffs(effective, buffs, warnings)
+
+    # Two-handing multiplies the buffed Strength.
     gets_two_hand_bonus = int(weapon["isDualBlade"]) != 1
     if two_handed:
         if gets_two_hand_bonus:
             effective["str"] = min(
-                math.floor(stats.strength * TWO_HAND_STR_MULTIPLIER), TWO_HAND_STR_CAP
+                math.floor(effective["str"] * TWO_HAND_STR_MULTIPLIER), TWO_HAND_STR_CAP
             )
         else:
             warnings.append("No two-handing Strength bonus for this weapon (isDualBlade = 1).")
@@ -505,6 +518,7 @@ def calculate_ar(
         affinity=affinity_name,
         upgrade_level=upgrade_level,
         two_handed=two_handed,
+        buffs=applied,
         effective_stats=effective,
         requirements=requirements,
         unmet_requirements=unmet_requirements,
@@ -512,6 +526,39 @@ def calculate_ar(
         warnings=warnings,
         **lines,
     )
+
+
+def _apply_buffs(
+    effective: dict[str, int], buffs: Sequence[str], warnings: list[str]
+) -> list[AppliedBuff]:
+    """Add each buff's stat bonus to effective (in place), capped at MAX_STAT."""
+    if not buffs:
+        return []
+    # Imported here because tools.buffs imports this module.
+    from tools.buffs import find_buff
+
+    applied: list[AppliedBuff] = []
+    for name in buffs:
+        buff = find_buff(name)
+        if any(a.name == buff.name for a in applied):
+            continue  # the same buff doesn't stack with itself
+        applied.append(AppliedBuff(**buff.model_dump(exclude={"effect_id"})))
+        if not buff.stats:
+            warnings.append(
+                f"{buff.name} doesn't raise any stats, so it doesn't change attack rating. "
+                "Damage multipliers from buffs aren't shown on the status screen or calculated "
+                "here."
+            )
+        for stat, amount in buff.stats.items():
+            effective[stat] += amount
+
+    capped = [s for s in STATS if effective[s] > MAX_STAT]
+    for stat in capped:
+        effective[stat] = MAX_STAT
+    if capped:
+        names = ", ".join(STAT_DISPLAY_NAME[s] for s in capped)
+        warnings.append(f"Buffed {names} capped at {MAX_STAT}.")
+    return applied
 
 
 def reinforce_family(reinforce_name: object) -> str:

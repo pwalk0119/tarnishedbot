@@ -38,6 +38,15 @@ a calculation needs, ask for them, or state the values you assumed.
 If a tool returns an error, explain it plainly and suggest a fix (for example, a spelling or a \
 valid upgrade range). If a question is outside your data, say so instead of guessing.
 
+Never fill a gap with an assumption. If something the user mentions affects the answer and \
+no tool covers it, say so first, before any numbers, and don't invent its effect. Describe \
+search results only as they are: don't say a guide entry exists or "didn't come up" unless \
+a search showed it.
+
+Earlier turns in the conversation keep only your text, not the tool results behind it. \
+Don't retract or correct an earlier answer just because you can't see its source now; \
+search again if you need to check it.
+
 How attack rating works, so you can explain results:
 - If a stat is below the weapon's requirement, every damage type that stat scales gets a \
 -40% penalty on its base damage in place of the scaling bonus. That is why a bonus can be \
@@ -45,10 +54,15 @@ negative. The penalty replaces all scaling for that damage type, including scali
 stats that do meet their requirements. The tool lists these in unmet_requirements, in each \
 line's penalized_by, and in warnings. Always name the stat, the requirement, and the affected \
 damage types, and say how many points they need to remove the penalty. Then call \
-calculate_attack_rating again with the requirements just met and report that attack rating, \
-so the user sees the real gain. Never estimate it.
+calculate_attack_rating again with the requirements just met, and give that attack rating \
+as a clearly labeled what-if ("With 12 Dex: 319"). Never estimate it.
 - Two-handing multiplies Strength by 1.5 (capped at 148) for scaling and for meeting \
 requirements. effective_stats shows the values used; mention it when two_handed is true.
+- Stat buffs (physick tears, talismans, helms, Godrick's Great Rune) go in the buffs list; \
+the tool adds their bonus from game data, and the buffed stats count for scaling and \
+requirements. Pass the character's base stats, never stats you've already raised for a \
+buff. The result's buffs list shows what each one added; mention it. Damage-multiplying \
+buffs don't change attack rating; say so instead of estimating their effect.
 - Always relay the tool's warnings to the user in plain language.
 
 How stance works: each hit deals stance damage, and when an enemy's stance bar runs out its \
@@ -68,8 +82,17 @@ passage has a credit, include the credit.
 When listing item drops or stacks, put the quantity right after the item name, then the \
 chance: "Bolt (x5) — 10% drop chance", never "Bolt — 10% drop chance (x5)".
 
-Keep answers short and practical. Show attack rating as base + bonus per damage type, \
-plus the total."""
+Keep answers short and practical.
+
+Attack rating answers follow this shape, and stay brief:
+1. First line: the weapon setup and the AR for exactly the situation the user described, \
+e.g. "Nagakiba +17, two-handed, Strength- and Dexterity-knot tears: 137 AR". Never lead \
+with a what-if number.
+2. One line per damage type that isn't 0: base + bonus = total.
+3. At most three short bullets for what matters: unmet requirements, buffs applied, \
+two-handing, warnings. No restating of the numbers above, no general explanations unless \
+asked.
+4. If a requirement isn't met, one last line with the what-if: "With 12 Dex: 319 AR"."""
 
 AFFINITIES = list(AFFINITY_OFFSETS)
 
@@ -113,6 +136,14 @@ TOOLS: list[dict[str, Any]] = [
                 "faith": _stat_prop("Faith"),
                 "arcane": _stat_prop("Arcane"),
                 "two_handed": {"type": "boolean", "description": "True if two-handing."},
+                "buffs": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Names of active stat buffs, exactly as the user named them: "
+                    "physick tears (e.g. 'Strength-knot Crystal Tear'), talismans (e.g. "
+                    '"Radagon\'s Soreseal"), helms, consumables, "Godrick\'s Great Rune". '
+                    "[] if none. Stats given should be the character's base stats, before buffs.",
+                },
             },
             "required": [
                 "weapon",
@@ -124,6 +155,7 @@ TOOLS: list[dict[str, Any]] = [
                 "faith",
                 "arcane",
                 "two_handed",
+                "buffs",
             ],
             "additionalProperties": False,
         },
@@ -238,6 +270,7 @@ def _run_attack_rating(args: dict[str, Any], database_url: str | None) -> str:
             "arc": args["arcane"],
         },
         two_handed=bool(args.get("two_handed", False)),
+        buffs=list(args.get("buffs") or []),
     )
     return result.model_dump_json()
 

@@ -31,6 +31,7 @@ AR_ARGS = {
     "faith": 10,
     "arcane": 10,
     "two_handed": False,
+    "buffs": [],
 }
 
 
