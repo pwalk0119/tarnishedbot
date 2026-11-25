@@ -23,7 +23,7 @@ from pathlib import Path
 import pandas as pd
 from pydantic import BaseModel
 
-from tools.attack_rating import data_dir
+from tools.attack_rating import data_dir, normalize_name
 
 STAT_COLUMNS = {
     "str": "addStrengthStatus",
@@ -50,9 +50,8 @@ class Buff(BaseModel):
 
 
 def _norm(text: str) -> str:
-    # Drop apostrophes first so "Radagon's" and "radagons" match.
-    text = re.sub(r"['’]", "", text.lower())
-    return re.sub(r"[^a-z0-9]+", " ", text).strip()
+    # Same rules as weapon names, so "Radagon's" and "radagons" match.
+    return normalize_name(text)
 
 
 @lru_cache(maxsize=4)

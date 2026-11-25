@@ -149,7 +149,7 @@ def test_plain_answer_needs_no_tools() -> None:
     assert call["model"] == MODEL
     assert call["tools"] == TOOLS
     assert call["output_config"] == {"effort": "medium"}
-    assert call["system"] == system_prompt("veteran")
+    assert call["system"] == system_prompt("default")
 
 
 # ------------------------------------------------------------------ voices
@@ -157,12 +157,12 @@ def test_plain_answer_needs_no_tools() -> None:
 
 def test_each_voice_keeps_the_shared_rules() -> None:
     prompts = {v: system_prompt(v) for v in VOICE_PROMPTS}
-    assert set(prompts) == {"veteran", "in_character"}
+    assert set(prompts) == {"default", "in_character"}
     for voice, prompt in prompts.items():
         assert "Attack rating answers follow this shape" in prompt
         assert "call search_guide" in prompt
         assert prompt.endswith(VOICE_PROMPTS[voice])
-    assert prompts["veteran"] != prompts["in_character"]
+    assert prompts["default"] != prompts["in_character"]
 
 
 def test_unknown_voice_raises() -> None:

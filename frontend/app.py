@@ -19,7 +19,7 @@ st.set_page_config(page_title="TarnishedBot", page_icon="🗡️")
 st.title("TarnishedBot")
 st.caption("Your guide to Limgrave. Game data: Elden Ring 1.17.2 / regulation 1.17.3.")
 
-VOICES = {"veteran": "Veteran player", "in_character": "In-character"}
+VOICES = {"default": "Default mode", "in_character": "In-character"}
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -32,11 +32,11 @@ with st.sidebar:
             "Voice",
             options=list(VOICES),
             format_func=VOICES.get,
-            default="veteran",
+            default="default",
             key="voice",
             help="Changes how replies are written. Your chat history stays.",
         )
-        or "veteran"
+        or "default"
     )
 
 

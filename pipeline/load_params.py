@@ -1,7 +1,8 @@
 """Load exported param CSVs from data/processed/ into SQLite.
 
 One table per CSV (all columns kept, unique index on ID), plus a load_meta
-table recording the pinned game version and each source file's SHA-256.
+table recording the pinned game version and each source file's SHA-256, and
+the derived weapon_levels table (every base-game weapon at every upgrade level).
 Re-running replaces the tables.
 
 Run from the project root:
@@ -15,7 +16,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
-from sqlalchemy import Engine, create_engine, text
+from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.engine import make_url
 
 PROCESSED_DIR = Path("data/processed")
@@ -53,6 +54,7 @@ TABLES = {
     "AssetEnvironmentGeometryParam.csv": "asset_environment_geometry_param",
 }
 META_TABLE = "load_meta"
+LEVELS_TABLE = "weapon_levels"  # derived, see tools.weapon_progression
 
 
 def find_csvs(processed_dir: Path = PROCESSED_DIR) -> list[Path]:
@@ -106,10 +108,24 @@ def load_params(
                 conn.execute(text(f'CREATE UNIQUE INDEX "ix_{table}_ID" ON "{table}" ("ID")'))
                 counts[table] = len(df)
                 meta_rows.append({"key": f"sha256:{csv_name}", "value": _sha256(path)})
+            counts[LEVELS_TABLE] = _load_weapon_levels(conn, processed_dir)
             pd.DataFrame(meta_rows).to_sql(META_TABLE, conn, if_exists="replace", index=False)
     finally:
         engine.dispose()
     return counts
+
+
+def _load_weapon_levels(conn: Connection, processed_dir: Path) -> int:
+    """Derived table: every base-game weapon's numbers at every upgrade level."""
+    from tools.attack_rating import load_tables
+    from tools.weapon_progression import LEVELS_TABLE, build_weapon_levels
+
+    df = build_weapon_levels(load_tables(processed_dir))
+    df.to_sql(LEVELS_TABLE, conn, if_exists="replace", index=False)
+    conn.execute(
+        text(f'CREATE UNIQUE INDEX "ix_{LEVELS_TABLE}" ON "{LEVELS_TABLE}" (weapon_id, level)')
+    )
+    return len(df)
 
 
 if __name__ == "__main__":

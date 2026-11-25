@@ -96,3 +96,31 @@ def test_base_damage_matches_ar_calculator(
 def test_unknown_weapon(param_db_url: str) -> None:
     with pytest.raises(KeyError):
         lookup_weapon("Not A Real Sword", database_url=param_db_url)
+
+
+# ------------------------------------------------------------ forgiving names
+
+
+def test_normalize_name_ignores_apostrophes_and_punctuation() -> None:
+    from tools.attack_rating import normalize_name
+
+    assert normalize_name("Guardian's Swordspear") == "guardians swordspear"
+    assert normalize_name("  guardian’s   SWORDSPEAR ") == "guardians swordspear"
+
+
+@pytest.mark.parametrize("name", ["Guardians Swordspear", "guardian's swordspear"])
+def test_resolve_ignores_apostrophes(name: str) -> None:
+    from tools.attack_rating import build_name_index, resolve_in_index
+
+    index = build_name_index([(1000000, "Guardian's Swordspear")])
+    assert resolve_in_index(name, None, index, lambda wid: wid == 1000000) == (1000000, "Standard")
+
+
+def test_unknown_weapon_suggests_close_names() -> None:
+    from tools.attack_rating import build_name_index, resolve_in_index
+
+    index = build_name_index([(1000000, "Guardian's Swordspear"), (2000000, "Longsword")])
+    with pytest.raises(KeyError, match="Did you mean: Guardian's Swordspear"):
+        resolve_in_index("Guardian Swordspear", None, index, lambda wid: True)
+    with pytest.raises(KeyError, match="Did you mean: Guardian's Swordspear"):
+        resolve_in_index("Keen Guardian Swordspear", None, index, lambda wid: True)

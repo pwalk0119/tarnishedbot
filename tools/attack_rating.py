@@ -29,8 +29,10 @@ TODO:
 
 from __future__ import annotations
 
+import difflib
 import math
 import os
+import re
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
@@ -158,7 +160,7 @@ class ParamTables:
     reinforce: pd.DataFrame
     curves: pd.DataFrame
     element_correct: pd.DataFrame
-    name_index: dict[str, list[int]]  # lowercase name -> IDs (NPC rows excluded)
+    name_index: NameIndex  # normalized name -> IDs (NPC rows excluded)
 
 
 def data_dir() -> Path:
@@ -239,6 +241,8 @@ class AttackRating(BaseModel):
     upgrade_level: int
     two_handed: bool
     buffs: list[AppliedBuff] = []
+    # Stats the user didn't give, filled in by fill_unspecified_stats (short keys).
+    assumed_stats: dict[str, int] = {}
     # Stats after buffs and two-handing (Str can reach 148), keyed str/dex/int/fai/arc.
     effective_stats: dict[str, int]
     # Weapon's stat requirements, and the ones effective_stats doesn't meet.
@@ -318,21 +322,70 @@ def _unique_id(ids: list[int], label: str) -> int:
     return ids[0]
 
 
-def build_name_index(pairs: Iterable[tuple[object, object]]) -> dict[str, list[int]]:
-    """(ID, Name) pairs -> lowercase name -> IDs. Skips blank names and "[NPC]"-style rows."""
-    index: dict[str, list[int]] = {}
+def normalize_name(text: str) -> str:
+    """Lowercase, drop apostrophes, collapse punctuation and spaces.
+
+    "Guardian's Swordspear", "guardians swordspear" and "Guardian Swordspear's"
+    all differ only in ways players don't care about when typing a name.
+    """
+    text = re.sub(r"['’]", "", text.lower())
+    return re.sub(r"[^a-z0-9]+", " ", text).strip()
+
+
+class NameIndex(dict[str, list[int]]):
+    """Normalized name -> IDs, plus the display name for each key (for suggestions)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.display: dict[str, str] = {}
+
+
+def build_name_index(pairs: Iterable[tuple[object, object]]) -> NameIndex:
+    """(ID, Name) pairs -> normalized name -> IDs. Skips blank names and "[NPC]"-style rows."""
+    index = NameIndex()
     for wid, name in pairs:
         if isinstance(name, str) and name.strip() and not name.startswith("["):
-            index.setdefault(name.strip().lower(), []).append(int(wid))
+            key = normalize_name(name)
+            index.setdefault(key, []).append(int(wid))
+            index.display.setdefault(key, name.strip())
     return index
 
 
+def _unknown_weapon(label: str, key: str, name_index: Mapping[str, list[int]]) -> KeyError:
+    """KeyError naming up to three close matches, so a typo can be fixed in one retry."""
+    candidates = [key]
+    for prefix, _ in _prefixes():
+        rest = key.removeprefix(prefix + " ")
+        if rest != key:
+            candidates.append(rest)
+            break
+    display = getattr(name_index, "display", {})
+    close: list[str] = []
+    for candidate in candidates:
+        base_game = [k for k, ids in name_index.items() if not all(map(is_dlc_weapon, ids))]
+        for match in difflib.get_close_matches(candidate, base_game, n=3, cutoff=0.6):
+            if match not in close:
+                close.append(match)
+    names = [display.get(c, c) for c in close[:3]]
+    hint = f" Did you mean: {', '.join(names)}?" if names else ""
+    return KeyError(f"Unknown weapon {label!r}.{hint}")
+
+
+def is_dlc_weapon(wid: int) -> bool:
+    """Shadow of the Erdtree weapons use IDs like 2500000 and 67500000 (a 5 in this digit)."""
+    return (wid // 100_000) % 10 == 5
+
+
 def resolve_weapon_id(
-    weapon: str | int, affinity: str | None, tables: ParamTables
+    weapon: str | int, affinity: str | None, tables: ParamTables, *, allow_dlc: bool = False
 ) -> tuple[int, str]:
     """Return (weapon row ID, canonical affinity name) using the cached CSV tables."""
     return resolve_in_index(
-        weapon, affinity, tables.name_index, lambda wid: wid in tables.weapons.index
+        weapon,
+        affinity,
+        tables.name_index,
+        lambda wid: wid in tables.weapons.index,
+        allow_dlc=allow_dlc,
     )
 
 
@@ -341,12 +394,16 @@ def resolve_in_index(
     affinity: str | None,
     name_index: Mapping[str, list[int]],
     exists: Callable[[int], bool],
+    *,
+    allow_dlc: bool = False,
 ) -> tuple[int, str]:
     """Return (weapon row ID, canonical affinity name).
 
     Accepts a base name plus affinity ("Longsword", "Heavy"), an affinity name
     ("Heavy Longsword", "Bloody Longsword"), or a numeric ID. Works on any data
     source: pass its name index and a function that says whether an ID exists.
+    DLC weapons raise ValueError unless allow_dlc is True (kept for a future
+    override; nothing turns it on yet).
     """
     wanted = normalize_affinity(affinity) if affinity is not None else None
     parsed: str | None = None
@@ -357,7 +414,7 @@ def resolve_in_index(
             raise KeyError(f"No weapon with ID {wid}")
     else:
         label = str(weapon).strip()
-        key = label.lower()
+        key = normalize_name(label)
         if key in name_index:
             wid = _unique_id(name_index[key], label)
         else:
@@ -368,7 +425,12 @@ def resolve_in_index(
                     wid, parsed = base + AFFINITY_OFFSETS[aff], aff
                     break
             else:
-                raise KeyError(f"Unknown weapon {label!r}")
+                raise _unknown_weapon(label, key, name_index)
+    if not allow_dlc and is_dlc_weapon(wid):
+        raise ValueError(
+            f"{weapon} is a Shadow of the Erdtree (DLC) weapon. TarnishedBot covers the base "
+            "game only."
+        )
 
     if wanted is None:
         if parsed is not None:
@@ -414,15 +476,18 @@ def calculate_ar(
     weapon_name_or_id: str | int,
     upgrade_level: int,
     affinity: str | None,
-    stats: Stats | Mapping[str, int],
+    stats: Stats | Mapping[str, int | None],
     two_handed: bool = False,
     *,
     buffs: Sequence[str] = (),
     tables: ParamTables | None = None,
 ) -> AttackRating:
-    """Calculate displayed attack rating for one weapon, upgrade level, and stat line."""
+    """Calculate displayed attack rating for one weapon, upgrade level, and stat line.
+
+    A stat given as None is filled in by fill_unspecified_stats and listed in
+    assumed_stats.
+    """
     tables = tables or load_tables()
-    stats = stats if isinstance(stats, Stats) else Stats(**stats)
     wid, affinity_name = resolve_weapon_id(weapon_name_or_id, affinity, tables)
     weapon = tables.weapons.loc[wid]
     warnings: list[str] = []
@@ -450,6 +515,13 @@ def calculate_ar(
             "This weapon's AttackElementCorrectParam row uses overwrite/Influence values, "
             "which this calculator doesn't apply yet; scaling may be slightly off."
         )
+
+    assumed: dict[str, int] = {}
+    if not isinstance(stats, Stats):
+        long_to_short = {n: f.alias for n, f in Stats.model_fields.items() if f.alias}
+        given = {long_to_short.get(k, k): v for k, v in stats.items()}
+        assumed = fill_unspecified_stats(weapon, element, reinforce, given)
+        stats = Stats(**{**given, **assumed})
 
     effective = stats.short()
     applied = _apply_buffs(effective, buffs, warnings)
@@ -519,6 +591,7 @@ def calculate_ar(
         upgrade_level=upgrade_level,
         two_handed=two_handed,
         buffs=applied,
+        assumed_stats=assumed,
         effective_stats=effective,
         requirements=requirements,
         unmet_requirements=unmet_requirements,
@@ -526,6 +599,70 @@ def calculate_ar(
         warnings=warnings,
         **lines,
     )
+
+
+# A stat that can't change this weapon's attack rating is assumed to be this.
+NEUTRAL_STAT = 10
+
+
+def stats_that_matter(weapon: pd.Series, element: pd.Series, reinforce: pd.Series) -> set[str]:
+    """Stats that scale at least one damage type this weapon deals at this upgrade level."""
+    matter: set[str] = set()
+    for dmg in DAMAGE_TYPES:
+        if float(weapon[ATTACK_BASE_COL[dmg]]) * float(reinforce[ATK_RATE_COL[dmg]]) <= 0:
+            continue
+        suffix = ELEMENT_SUFFIX[dmg]
+        for s in STATS:
+            flagged = int(element[f"is{ELEMENT_STAT_NAME[s]}Correct_by{suffix}"]) == 1
+            if flagged and float(weapon[SCALING_COL[s]]) > 0:
+                matter.add(s)
+    return matter
+
+
+def lowest_starting_stats() -> dict[str, int]:
+    """Lowest value of each stat among the ten starting classes, short keys."""
+    from tools.starting_classes import starting_classes  # imports this module
+
+    long_names = {
+        "str": "strength",
+        "dex": "dexterity",
+        "int": "intelligence",
+        "fai": "faith",
+        "arc": "arcane",
+    }
+    classes = starting_classes()
+    return {s: min(c.stats[long] for c in classes) for s, long in long_names.items()}
+
+
+def fill_unspecified_stats(
+    weapon: pd.Series, element: pd.Series, reinforce: pd.Series, given: dict[str, int | None]
+) -> dict[str, int]:
+    """Values for the stats given as None (or left out). Returns only the filled ones.
+
+    - A stat that can't change this weapon's attack rating: 10.
+    - A stat that scales its damage but has no requirement (an Int-scaling Magic
+      affinity, say): the lowest value any starting class has.
+    - A stat that scales its damage and has a requirement: ValueError, since any
+      guess would decide whether the -40% penalty applies.
+    """
+    missing = [s for s in STATS if given.get(s) is None]
+    if not missing:
+        return {}
+    matter = stats_that_matter(weapon, element, reinforce)
+    lowest = lowest_starting_stats() if any(s in matter for s in missing) else {}
+    filled: dict[str, int] = {}
+    for s in missing:
+        if s not in matter:
+            filled[s] = NEUTRAL_STAT
+        elif int(weapon[REQUIREMENT_COL[s]]) > 0:
+            raise ValueError(
+                f"{STAT_DISPLAY_NAME[s]} wasn't given, and this weapon needs "
+                f"{int(weapon[REQUIREMENT_COL[s]])} {STAT_DISPLAY_NAME[s]} and scales with it. "
+                "Ask the user for it."
+            )
+        else:
+            filled[s] = lowest[s]
+    return filled
 
 
 def _apply_buffs(

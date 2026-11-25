@@ -38,7 +38,9 @@ copy .env.example .env      # Windows (macOS/Linux: cp .env.example .env)
 
 Then put your Anthropic API key in `.env` as `ANTHROPIC_API_KEY=...`.
 
-Build the local SQLite database from the committed CSVs (re-run after updating `data/processed/`):
+Build the local SQLite database from the committed CSVs (re-run after updating `data/processed/`).
+Besides one table per CSV, this builds `weapon_levels`: every base-game weapon's damage and
+scaling at every upgrade level, used by the weapon progression tool:
 
 ```bash
 uv run python -m pipeline.load_params
@@ -83,7 +85,7 @@ Game data is extracted **offline** from a local copy of the game (version pinned
 | CSVs | Source |
 |---|---|
 | EquipParamWeapon, ReinforceParamWeapon, CalcCorrectGraph, AttackElementCorrectParam | Smithbox Param Editor CSV export |
-| BonfireWarpParam (sites of grace), BonfireWarpSubCategoryParam, ShopLineupParam, ShopLineupParam_Recipe, NpcParam, SpEffectParam, ItemLotParam_enemy, ItemLotParam_map, GameAreaParam, WorldMapPointParam, WorldMapPlaceNameParam, EquipParamGoods, EquipParamProtector, EquipParamAccessory, EquipParamGem, Magic, SwordArtsParam, EquipMtrlSetParam, ThrowParam, AtkParam_Pc, BehaviorParam_PC, AssetEnvironmentGeometryParam | WitchyBND + `pipeline/witchy_to_csv.py` |
+| CharaInitParam (starting classes and keepsakes), BonfireWarpParam (sites of grace), BonfireWarpSubCategoryParam, ShopLineupParam, ShopLineupParam_Recipe, NpcParam, SpEffectParam, ItemLotParam_enemy, ItemLotParam_map, GameAreaParam, WorldMapPointParam, WorldMapPlaceNameParam, EquipParamGoods, EquipParamProtector, EquipParamAccessory, EquipParamGem, Magic, SwordArtsParam, EquipMtrlSetParam, ThrowParam, AtkParam_Pc, BehaviorParam_PC, AssetEnvironmentGeometryParam | WitchyBND + `pipeline/witchy_to_csv.py` |
 | MapPlacements (enemies, corpse/chest pickups and gatherables with positions, per map) | Map files exported with Smithbox + `pipeline/map_placements.py` |
 
 To re-export with WitchyBND: copy `regulation.bin` out of the game folder, run `WitchyBND.exe -s regulation.bin`, then `WitchyBND.exe -s <Param>.param` for each param in the unpacked `regulation-bin` folder, and convert:

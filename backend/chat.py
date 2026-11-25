@@ -18,25 +18,43 @@ from pydantic import BaseModel, Field, ValidationError
 from tools.attack_rating import AFFINITY_OFFSETS, MAX_UPGRADE_LEVEL, calculate_ar
 from tools.guide_search import ENTRY_TYPES, search_guide
 from tools.stance import weapon_stance
+from tools.starting_classes import keepsakes, starting_classes
 from tools.weapon_lookup import lookup_weapon
+from tools.weapon_progression import weapon_progression
+from tools.weapon_search import search_weapon_scaling
 
 MAX_TOOL_ROUNDS = 8
 MAX_TOKENS = 16000
 MAX_HISTORY_MESSAGES = 20
 DEFAULT_EFFORT = "medium"
 
-Voice = Literal["veteran", "in_character"]
-DEFAULT_VOICE: Voice = "veteran"
+Voice = Literal["default", "in_character"]
+DEFAULT_VOICE: Voice = "default"
 
 BASE_PROMPT = """You are TarnishedBot, a guide to Elden Ring focused on the Limgrave region.
 
 Game data is pinned to Elden Ring app 1.17.2, regulation 1.17.3, base game only (no DLC).
 
 Use your tools for every number: call calculate_attack_rating for attack rating or damage, \
-lookup_weapon for base damage, scaling, requirements, weight, or affinities, and \
-calculate_stance_damage for stance (poise) damage and how many hits break an enemy's stance. \
-Never estimate these values yourself. If the user hasn't given the stats or upgrade level \
-a calculation needs, ask for them, or state the values you assumed.
+lookup_weapon for base damage, scaling, requirements, weight, or affinities, \
+calculate_stance_damage for stance (poise) damage and how many hits break an enemy's stance, \
+get_weapon_progression for one weapon's damage and scaling at every upgrade level (one call, \
+never one lookup per level), search_weapon_scaling for any question across many weapons or \
+affinities (which weapons reach a grade, where a grade starts), and get_starting_options for \
+starting classes (level, stats, starting gear) and keepsakes (what each gives and does). \
+Never estimate these values yourself, and never take class stats or gear from memory. \
+If the user hasn't given the upgrade level, ask for it.
+
+Stats the user didn't give: pass null for them to calculate_attack_rating. The tool fills \
+each one and lists it in assumed_stats: 10 for a stat that can't change this weapon's attack \
+rating, and the lowest value any starting class has for a stat that scales the weapon without \
+a requirement (an Int-scaling Magic affinity, say). Mention the assumed values in one short \
+bullet. If the tool says a stat with a requirement is missing, ask the user for it. If the \
+user says the requirements are met, look them up and pass exactly those values. If the user \
+names a starting class's base stats, get them from get_starting_options.
+
+Shadow of the Erdtree (DLC) weapons are out of scope: the tools refuse them. Say so in one \
+line; don't answer from memory.
 
 If a tool returns an error, explain it plainly and suggest a fix (for example, a spelling or a \
 valid upgrade range). If a question is outside your data, say so instead of guessing.
@@ -67,6 +85,12 @@ requirements. Pass the character's base stats, never stats you've already raised
 buff. The result's buffs list shows what each one added; mention it. Damage-multiplying \
 buffs don't change attack rating; say so instead of estimating their effect.
 - Always relay the tool's warnings to the user in plain language.
+
+Scaling sweeps: search_weapon_scaling returns total_matches and at most 30 matches, best \
+first. Give the count, list the matches that answer the question (weapon, affinity, stat, \
+best grade and the level it starts), and say when the list was cut short. grade_from_level \
+gives the first upgrade level for each grade; use it for "at what level does it reach A" \
+instead of looking up levels one by one. It covers base-game weapons only.
 
 How stance works: each hit deals stance damage, and when an enemy's stance bar runs out its \
 stance breaks, leaving it open to a critical hit. calculate_stance_damage lists stance damage \
@@ -110,7 +134,7 @@ asked.
 4. If a requirement isn't met, one last line with the what-if: "With 12 Dex: 319 AR"."""
 
 VOICE_PROMPTS: dict[str, str] = {
-    "veteran": """Voice: veteran player.
+    "default": """Voice: default (an experienced player).
 You talk like someone with thousands of hours in the game helping a friend over co-op: \
 relaxed, direct, sure of yourself. Short sentences, contractions, player shorthand where it \
 fits (R1, R2, 2H, AR, stance break, guard counter, Grace, runes, cheese). At most one dry \
@@ -119,34 +143,46 @@ Examples of the tone:
 - "Guide doesn't cover Malenia yet. It's Limgrave only for now."
 - "Two charged R2s and he's open. Go for the crit."
 - "You're 2 Dex short, so the scaling's gone. Level Dex first.\"""",
-    "in_character": """Voice: in-character guide.
-You speak as a nameless, weathered wanderer of the Lands Between who has walked Limgrave \
-many times, addressing the user as "Tarnished". Measured, solemn, a little archaic ("seek", \
-"shall", "'tis"), but always clear. Use in-world words (Grace, runes, the Erdtree, foes). \
-Stay in character in every reply: greetings, errors, and questions outside the guide too.
+    "in_character": """Voice: in-character guide, for guide answers only.
+When the answer comes from search_guide or get_starting_options, or is a greeting or small \
+talk, you speak as a \
+nameless, weathered wanderer of the Lands Between who has walked Limgrave many times, \
+addressing the user as "Tarnished". Measured, solemn, a little archaic ("seek", "shall", \
+"'tis"), but always clear. Use in-world words (Grace, runes, the Erdtree, foes).
 You are not any named character from the game; never claim to be one. Don't invent lore; \
-your facts come only from the game data and the guide, as in the rules above.
-Keep the same answer shapes and length as a plain answer, plus at most one short in-world \
-line. Number lines keep their exact plain format, with nothing added to them (not even \
-"Tarnished"). Every other sentence is in voice, including assumptions and caveats: \
-"I have reckoned it one-handed, for you named no grip." not "I assumed one-handed." \
-Spell out shorthand the first time \
-("charged heavy attack (R2)"). A draft note becomes an in-world line that still says plainly \
-that the entry hasn't been checked.
-Examples of the tone:
-- "Of Malenia I hold no record, Tarnished. My knowledge ends at Limgrave's borders."
-- "- Thy Dexterity stands 2 short of the 22 this blade demands; until then its scaling \
-is lost to the penalty."
-- "Rest at the grace first, Tarnished. The road ahead is long."
-- "Two charged heavy attacks (R2), and the knight shall kneel. Strike then."
-- "This account is yet unchecked, Tarnished. Tread with care.\"""",
+your facts come only from the passages you found, as in the rules above.
+
+In character, never mention the guide, the game data, entries, passages, searches, tools \
+or drafts. Speak as if you remember the land yourself. The draft note becomes an in-world \
+line that still says plainly it isn't certain, and only for passages you actually used: \
+"This I have not walked myself, Tarnished. Trust it with care." A credit is still quoted \
+exactly as given.
+
+When what you found doesn't answer the question, answer only with one cryptic line of not \
+knowing, and nothing else: no explanation, no near matches, no suggestions, no draft note. \
+Vary the line. For example:
+- "That path is hidden from me, Tarnished."
+- "The mists hold that answer, not I."
+- "Some things even Grace does not show."
+- "I have not walked that far, Tarnished."
+
+Calculations are not in character. When your answer uses calculate_attack_rating, \
+lookup_weapon, get_weapon_progression, calculate_stance_damage or search_weapon_scaling, \
+drop the persona for that part: plain, direct player voice, short sentences, no "Tarnished", \
+no archaic words. If one reply mixes both, the numbers part is plain and the guide part is \
+in character.
+
+Examples of the in-character tone:
+- "Few who enter that place leave by the same door. Go ready."
+- "Rest at the grace first, Tarnished. The road ahead is long.\"""",
 }
 
 
 VOICE_REMINDERS: dict[str, str] = {
-    "veteran": "(Answer in the veteran-player voice.)",
-    "in_character": "(Answer in the in-character voice: every sentence outside the number "
-    "lines is spoken as the wanderer, whatever voice earlier replies used.)",
+    "default": "(Answer in the default voice.)",
+    "in_character": "(In-character mode: guide answers and small talk as the wanderer, never "
+    "naming the guide or the game data, with one cryptic line if you don't know; "
+    "calculations and weapon stats plain. Whatever voice earlier replies used.)",
 }
 
 
@@ -156,6 +192,19 @@ def system_prompt(voice: str = DEFAULT_VOICE) -> str:
 
 
 AFFINITIES = list(AFFINITY_OFFSETS)
+# Kept here (not read from the CSV) so the tool schema doesn't need game data to import.
+CLASS_NAMES = [
+    "Vagabond",
+    "Warrior",
+    "Hero",
+    "Bandit",
+    "Astrologer",
+    "Prophet",
+    "Confessor",
+    "Samurai",
+    "Prisoner",
+    "Wretch",
+]
 
 _WEAPON_PROP = {
     "type": "string",
@@ -174,7 +223,10 @@ _LEVEL_PROP = {
 
 
 def _stat_prop(name: str) -> dict[str, Any]:
-    return {"type": "integer", "description": f"{name} stat, 1-99."}
+    return {
+        "type": ["integer", "null"],
+        "description": f"{name} stat, 1-99, or null if the user didn't give it.",
+    }
 
 
 TOOLS: list[dict[str, Any]] = [
@@ -257,6 +309,74 @@ TOOLS: list[dict[str, Any]] = [
                 },
             },
             "required": ["weapon", "affinity", "enemy"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "get_weapon_progression",
+        "description": "One weapon's base damage per type and scaling per stat (with letter "
+        "grades) at every upgrade level from +0 to its max, in one call. Use for 'how does it "
+        "change per level' questions instead of calling lookup_weapon once per level.",
+        "strict": True,
+        "input_schema": {
+            "type": "object",
+            "properties": {"weapon": _WEAPON_PROP, "affinity": _AFFINITY_PROP},
+            "required": ["weapon", "affinity"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "search_weapon_scaling",
+        "description": "Sweep every base-game weapon, affinity and upgrade level at once for "
+        "scaling grades. Returns weapons whose scaling in a stat (or any stat) reaches a minimum "
+        "letter grade at some upgrade level, best first, with the first upgrade level at which "
+        "each grade is reached. Also works for one weapon across all its affinities and levels. "
+        "Use this instead of many lookup_weapon calls.",
+        "strict": True,
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "stat": {
+                    "type": "string",
+                    "enum": ["str", "dex", "int", "fai", "arc", "any"],
+                    "description": "Scaling stat to check, or 'any' for all five.",
+                },
+                "min_grade": {
+                    "type": "string",
+                    "enum": ["E", "D", "C", "B", "A", "S"],
+                    "description": "Lowest letter grade to include.",
+                },
+                "affinity": {
+                    "type": "string",
+                    "enum": ["any", *AFFINITIES],
+                    "description": "Only this affinity, or 'any'.",
+                },
+                "weapon": {
+                    "type": "string",
+                    "description": "One weapon's name to check across its affinities, or '' to "
+                    "sweep every weapon.",
+                },
+            },
+            "required": ["stat", "min_grade", "affinity", "weapon"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "get_starting_options",
+        "description": "Character creation data from the game files: each starting class's "
+        "level, eight base stats, and starting weapons, armor, spells, ammo and items; plus the "
+        "keepsakes offered at creation and what each one gives.",
+        "strict": True,
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "class_name": {
+                    "type": "string",
+                    "enum": ["all", *CLASS_NAMES],
+                    "description": "One starting class, or 'all' to compare every class.",
+                },
+            },
+            "required": ["class_name"],
             "additionalProperties": False,
         },
     },
@@ -358,11 +478,45 @@ def _run_guide_search(args: dict[str, Any], database_url: str | None) -> str:
     return result.model_dump_json(exclude_none=True)
 
 
+def _run_progression(args: dict[str, Any], database_url: str | None) -> str:
+    result = weapon_progression(
+        args["weapon"], _affinity_arg(args.get("affinity")), database_url=database_url
+    )
+    return result.model_dump_json()
+
+
+def _run_scaling_search(args: dict[str, Any], database_url: str | None) -> str:
+    affinity = args.get("affinity")
+    result = search_weapon_scaling(
+        args["stat"],
+        args["min_grade"],
+        None if affinity in (None, "", "any") else affinity,
+        args.get("weapon") or None,
+    )
+    return result.model_dump_json(exclude_none=True)
+
+
+def _run_starting_options(args: dict[str, Any], database_url: str | None) -> str:
+    classes = starting_classes(args.get("class_name") or "all")
+    return json.dumps(
+        {
+            "classes": [c.model_dump() for c in classes],
+            "keepsakes": [k.model_dump() for k in keepsakes()],
+            "note": "Only items given at character creation. Items every class gets later "
+            "(flasks, the Tarnished's Wizened Finger) aren't listed. Keepsake effects are "
+            "short hand-written summaries, not the game's own text.",
+        }
+    )
+
+
 TOOL_HANDLERS: dict[str, Callable[[dict[str, Any], str | None], str]] = {
     "calculate_attack_rating": _run_attack_rating,
     "lookup_weapon": _run_lookup,
     "calculate_stance_damage": _run_stance,
     "search_guide": _run_guide_search,
+    "get_weapon_progression": _run_progression,
+    "search_weapon_scaling": _run_scaling_search,
+    "get_starting_options": _run_starting_options,
 }
 
 
